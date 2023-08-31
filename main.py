@@ -4,12 +4,11 @@ from model import *
 def conver_to_lstm_data(data,sequence_length):
     data =np.array(data)
     new_shape = [data.shape[0]-sequence_length]
-    #data_shape = list(data.shape)
-    
     new_shape.append(sequence_length)
-    new_shape.append(data.shape[1])
+    for i in np.arange(1,len(data.shape)):
+        new_shape.append(data.shape[i])
+    
     data_shape = tuple(new_shape)
-    #print(data_shape)
     new_data = np.zeros(shape=data_shape)
     for i in range(len(data)-sequence_length):
         new_data[i]=data[i:i+sequence_length]
@@ -30,31 +29,52 @@ def conver_to_lstm_data(data,sequence_length):
     Broadcom (AVGO): 1.63%
     Pepsico (PEP): 1.15%3
 """
-stocks = yf.download("^IXIC AAPL MSFT AMZN NVDA TSLA GOOGL GOOG META AVGO PEP",period = "6mo")
+stocks = yf.download("^IXIC AAPL MSFT AMZN NVDA TSLA GOOGL GOOG META AVGO PEP",period = "1mo")
 
 stocksClose = np.array(stocks["Adj Close"])
-stocksVolume = np.array(stocks["Volume"])
-stocksTime = np.array(stocks.index) 
+stocksCloseX = np.array(stocks["Adj Close"])[:,1:]
+stocksCloseY = np.array(stocks["Adj Close"])[:,0]
 
-xColumns = ["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "GOOGL","GOOG", "META", "AVGO", "PEP"]
-y=["^IXIC"]
-xClose = stocksClose[xColumns]
-xVolume =stocksVolume[xColumns]
-yClose =stocksClose[y]
-yVolume =stocksVolume[y]
+stocksCloseX.shape = (stocksCloseX.shape[0],stocksCloseX.shape[1],1)
+stocksCloseY.shape = (stocksCloseY.shape[0],stocksCloseY.shape[1],1)
+
+stocksVolume = np.array(stocks["Volume"])
+stocksVolumeX = np.array(stocks["Volume"])[:,1:]
+stocksVolumeY = np.array(stocks["Volume"])[:,0]
+
+stocksVolumeX.shape = (stocksVolumeX.shape[0],stocksVolumeX.shape[1],1)
+stocksVolumeY.shape = (stocksVolumeY.shape[0],stocksVolumeY.shape[1],1)
+# stocksTime = np.array(stocks.index) 
+
+stocksTotalX = np.append(stocksCloseX,stocksVolumeX,axis=2)
+
+# xColumns = ["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "GOOGL","GOOG", "META", "AVGO", "PEP"]
+# y=["^IXIC"]
+# xClose = stocksClose[["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "GOOGL","GOOG", "META", "AVGO", "PEP"]]
+# xVolume =stocksVolume[["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "GOOGL","GOOG", "META", "AVGO", "PEP"]]
+# yClose =stocksClose["^IXIC"]
+# yVolume =stocksVolume["^IXIC"]
 
 input_sequence_length = 5
 output_sequence_length = 3
 
 # lstm = LSTM(x.shape[1],hidden,layers,y.shape[1],input_sequence_length,output_sequence_length)
+# print(xClose.head())
+stocksTotalLstmX = conver_to_lstm_data(stocksTotal,input_sequence_length)[:-output_sequence_length,:,:,:]
+stocksTotalLstmY = conver_to_lstm_data(stocksTotal,output_sequence_length)[input_sequence_length:,:,:,:]
 
-stocksClose = conver_to_lstm_data(stocksClose,input_sequence_length)
-stocksVolume = conver_to_lstm_data(stocksVolume,input_sequence_length)
-input_size = 10
-hidden_size = 64
-output_size = 1
-ff_nn = NN(input_size,hidden_size,output_size)
-ff_nn.train(100,stocksCloseX,stocksCloseY)
+
+# stocksClose = conver_to_lstm_data(xClose,input_sequence_length)
+# stocksVolume = conver_to_lstm_data(xVolume,input_sequence_length)
+# stocksTime = conver_to_lstm_data(yClose,input_sequence_length)
+# stocksVolumeY = conver_to_lstm_data(yVolume,input_sequence_length)
+# print(stocksCloseX.shape)
+# print(stocksCloseY.shape)
+# input_size = 10
+# hidden_size = 64
+# output_size = 1
+# ff_nn = NN(input_size,hidden_size,output_size)
+# ff_nn.train(100,stocksCloseX,stocksCloseY)
 # time_lstm =conver_to_lstm_data(stocks.index,input_sequence_length)
 
 # y_train = conver_to_lstm_data(y[0:stop],output_sequence_length)
