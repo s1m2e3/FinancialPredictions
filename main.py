@@ -35,19 +35,21 @@ stocksClose = np.array(stocks["Adj Close"])
 stocksCloseX = np.array(stocks["Adj Close"])[:,1:]
 stocksCloseY = np.array(stocks["Adj Close"])[:,0]
 
+stocksClose.shape = (stocksClose.shape[0],stocksClose.shape[1],1)
 stocksCloseX.shape = (stocksCloseX.shape[0],stocksCloseX.shape[1],1)
-stocksCloseY.shape = (stocksCloseY.shape[0],stocksCloseY.shape[1],1)
+stocksCloseY.shape = (stocksCloseY.shape[0],1,1)
 
 stocksVolume = np.array(stocks["Volume"])
 stocksVolumeX = np.array(stocks["Volume"])[:,1:]
 stocksVolumeY = np.array(stocks["Volume"])[:,0]
 
+stocksVolume.shape = (stocksVolume.shape[0],stocksVolume.shape[1],1)
 stocksVolumeX.shape = (stocksVolumeX.shape[0],stocksVolumeX.shape[1],1)
-stocksVolumeY.shape = (stocksVolumeY.shape[0],stocksVolumeY.shape[1],1)
+stocksVolumeY.shape = (stocksVolumeY.shape[0],1,1)
 # stocksTime = np.array(stocks.index) 
 
-stocksTotalX = np.append(stocksCloseX,stocksVolumeX,axis=2)
-
+stocksTotal = np.append(stocksClose,stocksVolume,axis=2)
+stocksTotalY = np.append(stocksCloseY,stocksVolumeY,axis=2)
 # xColumns = ["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "GOOGL","GOOG", "META", "AVGO", "PEP"]
 # y=["^IXIC"]
 # xClose = stocksClose[["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "GOOGL","GOOG", "META", "AVGO", "PEP"]]
@@ -61,8 +63,7 @@ output_sequence_length = 3
 # lstm = LSTM(x.shape[1],hidden,layers,y.shape[1],input_sequence_length,output_sequence_length)
 # print(xClose.head())
 stocksTotalLstmX = conver_to_lstm_data(stocksTotal,input_sequence_length)[:-output_sequence_length,:,:,:]
-stocksTotalLstmY = conver_to_lstm_data(stocksTotal,output_sequence_length)[input_sequence_length:,:,:,:]
-
+stocksTotalLstmY = conver_to_lstm_data(stocksTotalY,output_sequence_length)[input_sequence_length:,:,:,:]
 
 # stocksClose = conver_to_lstm_data(xClose,input_sequence_length)
 # stocksVolume = conver_to_lstm_data(xVolume,input_sequence_length)
