@@ -92,7 +92,7 @@ hidden_size = 40
 # output_size = 1
 
 lr = 0.01
-iterations=1000
+iterations=100
 fig, (ax1,ax2) = plt.subplots(2,1)
 fig.set_figheight(15)
 fig.set_figwidth(20)
@@ -112,48 +112,47 @@ count = 0
 count0 = []
 count1 = []
 count2  = [] 
-bluedata = []
-orangedata = []
-purpledata = []
+unfolded={"autocorrelated":{0:[],1:[],2:[]},"not":{0:[],1:[],2:[]}}
 for stream in data["autocorrelated"]:
     count0.append(count)
     count1.append(count+1)
     count2.append(count+2)
-    bluedata.append(stream[0,0])
-    orangedata.append(stream[1,0])
-    purpledata.append(stream[2,0])
-    # ax1.scatter([count],stream[0,0],color="blue")
+    unfolded["autocorrelated"][0].append(stream[0,0])
+    unfolded["autocorrelated"][1].append(stream[1,0])
+    unfolded["autocorrelated"][2].append(stream[2,0])
+    ax1.plot([count,count+1,count+2],stream[:,0])
     # ax1.scatter([count+1],stream[1,0],color="orange")
     # ax1.scatter([count+2],stream[2,0],color="purple")
     count +=1
-ax1.plot(count0,bluedata,color="blue")
-ax1.plot(count1,orangedata,color="orange")
-ax1.plot(count2,purpledata,color="purple")
+# ax1.scatter(count0,unfolded["autocorrelated"][0],color="blue")
+# ax1.scatter(count1,unfolded["autocorrelated"][1],color="orange")
+# ax1.scatter(count2,unfolded["autocorrelated"][2],color="purple")
 ax1.title.set_text('Autocorrelated')
 ax1.set_xlim(0,150)
 count = 0
-count0 = []
-count1 = []
-count2  = [] 
-bluedata = []
-orangedata = []
-purpledata = []
+
+
 for stream in data["not"]:
-    count0.append(count)
-    count1.append(count+1)
-    count2.append(count+2)
-    bluedata.append(stream[0,0])
-    orangedata.append(stream[1,0])
-    purpledata.append(stream[2,0])
+    unfolded["not"][0].append(stream[0,0])
+    unfolded["not"][1].append(stream[1,0])
+    unfolded["not"][2].append(stream[2,0])
+    ax2.plot([count,count+1,count+2],stream[:,0])
     count +=1
 ax2.title.set_text('Not Autocorrelated')
-ax2.plot(count0,bluedata,color="blue")
-ax2.plot(count1,orangedata,color="orange")
-ax2.plot(count2,purpledata,color="purple")
+# ax2.scatter(count0,unfolded["not"][0],color="blue")
+# ax2.scatter(count1,unfolded["not"][1],color="orange")
+# ax2.scatter(count2,unfolded["not"][2],color="purple")
 ax2.set_xlim(0,150)
 ax1.plot(stocksTotalY[stop:,0,0],color="green")
 ax2.plot(stocksTotalY[stop:,0,0],color="green")
 plt.savefig("feedforward_autocorr.png")
+
+
+plt.figure(figsize=(20,15))
+plt.plot(stocksTotalY[stop:,0,0],color="green")
+plt.plot(count0,unfolded["not"][0],color="red")
+plt.plot(count0,unfolded["autocorrelated"][0],color="salmon")
+plt.savefig("feedforward_autocorr_justones.png")
 # time_lstm =conver_to_lstm_data(stocks.index,input_sequence_length)
 
 # y_train = conver_to_lstm_data(y[0:stop],output_sequence_length)

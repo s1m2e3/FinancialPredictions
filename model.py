@@ -65,6 +65,8 @@ class NN(nn.Module):
                     outputs1 = outputs[0:3]
                     outputs2 = self.forward(torch.flatten(x_train_data[stream+3,:,:,:]))[0:3]
                     loss += ((outputs1[-1]-outputs2[0])**2).mean()*lambda_
+                    loss += (outputs1[0]-outputs1[1])**2*lambda_
+                    loss += (outputs1[1]-outputs1[2])**2*lambda_
                     
                 loss.backward()
                 self.optimizer.step()
