@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torch.nn as nn
-
+import pytorch_forecasting 
 def reshape_tensor(x, batch_size):
     original_shape = x.size()
     num_elements = x.numel()
@@ -11,7 +11,7 @@ def reshape_tensor(x, batch_size):
     return x.view(new_shape)
 
 class NN(nn.Module):
-    def __init__(self, input_size1, hidden_size, output_size):
+    def __init__(self, input_size1, hidden_size, output_size,lr,weight_decay):
         super(NN, self).__init__()
         
         if torch.cuda.is_available():
@@ -24,7 +24,7 @@ class NN(nn.Module):
         self.fc2 = nn.Linear(hidden_size, hidden_size,dtype=torch.float).to(dev)
         self.relu = nn.ReLU().to(dev)
         self.fc3 = nn.Linear(hidden_size, output_size,dtype=torch.float).to(dev)
-        self.optimizer = torch.optim.SGD(self.parameters(),lr=0.1)
+        self.optimizer = torch.optim.SGD(self.parameters(),lr=lr,weight_decay=weight_decay)
         self.criterion = nn.MSELoss()
     def forward(self, x):
         if torch.cuda.is_available():
@@ -54,19 +54,21 @@ class NN(nn.Module):
         # print(self.forward(x_train_data)-y_train_data)
         # print(self.criterion(self.forward(x_train_data),y_train_data))
         for epoch in range(num_epochs):
-        
-            
-            self.optimizer.zero_grad()
-            outputs = self.forward(x_train_data)
-            loss = self.criterion(outputs, y_train_data)
-            loss.backward()
-            self.optimizer.step()
-            
-            #Print training statistics
+            for stream in range(len(x_train_data)):    
+
+                self.optimizer.zero_grad()
+                outputs = self.forward(torch.flatten(x_train_data[stream,:,:,:]))
+                loss = self.criterion(outputs, torch.flatten(y_train_data[stream,:,:,:]))
+                pytorch_forecasting.utils.autocorrelation(input, dim=0)
+                loss += self.criterion(-torch.autocorrelation(torch.flatten(y_train_data[stream,:,:,:])))
+                loss.backward()
+                self.optimizer.step()
+                
+            # Print training statistics
             if (epoch+1) % 1000 == 0:
-                print("Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}"
-                    .format(epoch+1, num_epochs, epoch+1, len(x_train_data), loss.item()))
-        print("mse ",loss,"number of nodes:",self.number_of_nodes)
+                # print("Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}"
+                    # .format(epoch+1, num_epochs, epoch+1, len(x_train_data), loss.item()))
+                print("mse ",loss,"number of nodes:",self.number_of_nodes)
 
 class LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, output_size,input_sequence_length,output_sequence_length):

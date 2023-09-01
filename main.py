@@ -1,6 +1,9 @@
 import yfinance as yf
 import numpy as np
 from model import *
+import matplotlib.pyplot as plt
+import torch
+
 def conver_to_lstm_data(data,sequence_length):
     data =np.array(data)
     new_shape = [data.shape[0]-sequence_length]
@@ -29,7 +32,9 @@ def conver_to_lstm_data(data,sequence_length):
     Broadcom (AVGO): 1.63%
     Pepsico (PEP): 1.15%3
 """
-stocks = yf.download("^IXIC AAPL MSFT AMZN NVDA TSLA GOOGL GOOG META AVGO PEP",period = "1mo")
+stocks = yf.download("^IXIC AAPL MSFT AMZN NVDA TSLA GOOGL GOOG META AVGO PEP",period = "12mo")
+for col in stocks.columns:
+    stocks[col]=(stocks[col]-stocks[col].min())/(stocks[col].max()-stocks[col].min())
 
 stocksClose = np.array(stocks["Adj Close"])
 stocksCloseX = np.array(stocks["Adj Close"])[:,1:]
@@ -64,7 +69,9 @@ output_sequence_length = 3
 # print(xClose.head())
 stocksTotalLstmX = conver_to_lstm_data(stocksTotal,input_sequence_length)[:-output_sequence_length,:,:,:]
 stocksTotalLstmY = conver_to_lstm_data(stocksTotalY,output_sequence_length)[input_sequence_length:,:,:,:]
-
+input_size = 110
+output_size = 6 
+hidden_size = 40
 # stocksClose = conver_to_lstm_data(xClose,input_sequence_length)
 # stocksVolume = conver_to_lstm_data(xVolume,input_sequence_length)
 # stocksTime = conver_to_lstm_data(yClose,input_sequence_length)
@@ -74,8 +81,19 @@ stocksTotalLstmY = conver_to_lstm_data(stocksTotalY,output_sequence_length)[inpu
 # input_size = 10
 # hidden_size = 64
 # output_size = 1
-# ff_nn = NN(input_size,hidden_size,output_size)
-# ff_nn.train(100,stocksCloseX,stocksCloseY)
+lr = 0.01
+iterations=100
+for weight_decay in [0]:
+    ff_nn = NN(input_size,hidden_size,output_size,lr=lr,weight_decay=weight_decay)
+    ff_nn.train(iterations,stocksTotalLstmX,stocksTotalLstmY)
+fig, (ax1,ax2) = plt.subplots(1,2)
+for stream in range(len(stocksTotalLstmX)):    
+    outputs = ff_nn.forward(torch.flatten(torch.tensor(stocksTotalLstmX[stream,:,:,:]))).cpu().detach().numpy().reshape(3,2)
+    ax1.scatter([stream,stream+1,stream+2],outputs[:,0],color="green")
+    ax2.scatter([stream,stream+1,stream+2],outputs[:,1],color="green")
+    ax1.scatter([stream,stream+1,stream+2],stocksTotalLstmY[stream,:,0,0],color="red",marker="x")
+    ax2.scatter([stream,stream+1,stream+2],stocksTotalLstmY[stream,:,:,1],color="red",marker="x")
+plt.show()
 # time_lstm =conver_to_lstm_data(stocks.index,input_sequence_length)
 
 # y_train = conver_to_lstm_data(y[0:stop],output_sequence_length)
