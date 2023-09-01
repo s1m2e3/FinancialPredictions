@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import torch.nn as nn
 import pytorch_forecasting 
+
+
 def reshape_tensor(x, batch_size):
     original_shape = x.size()
     num_elements = x.numel()
@@ -42,7 +44,7 @@ class NN(nn.Module):
 
         return out
 
-    def train(self,num_epochs,x_train_data,y_train_data):
+    def train(self,num_epochs,x_train_data,y_train_data,autocorr=False,lambda_=0.001):
         if torch.cuda.is_available():
             dev = "cuda:0"
         else:
@@ -59,13 +61,16 @@ class NN(nn.Module):
                 self.optimizer.zero_grad()
                 outputs = self.forward(torch.flatten(x_train_data[stream,:,:,:]))
                 loss = self.criterion(outputs, torch.flatten(y_train_data[stream,:,:,:]))
-                pytorch_forecasting.utils.autocorrelation(input, dim=0)
-                loss += self.criterion(-torch.autocorrelation(torch.flatten(y_train_data[stream,:,:,:])))
+                if autocorr and stream<len(x_train_data)-4:
+                    outputs1 = outputs[0:3]
+                    outputs2 = self.forward(torch.flatten(x_train_data[stream+3,:,:,:]))[0:3]
+                    loss += ((outputs1[-1]-outputs2[0])**2).mean()*lambda_
+                    
                 loss.backward()
                 self.optimizer.step()
                 
             # Print training statistics
-            if (epoch+1) % 1000 == 0:
+            if (epoch+1) % 10 == 0:
                 # print("Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}"
                     # .format(epoch+1, num_epochs, epoch+1, len(x_train_data), loss.item()))
                 print("mse ",loss,"number of nodes:",self.number_of_nodes)

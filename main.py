@@ -3,6 +3,7 @@ import numpy as np
 from model import *
 import matplotlib.pyplot as plt
 import torch
+from scipy.signal import correlate
 
 def conver_to_lstm_data(data,sequence_length):
     data =np.array(data)
@@ -32,7 +33,7 @@ def conver_to_lstm_data(data,sequence_length):
     Broadcom (AVGO): 1.63%
     Pepsico (PEP): 1.15%3
 """
-stocks = yf.download("^IXIC AAPL MSFT AMZN NVDA TSLA GOOGL GOOG META AVGO PEP",period = "12mo")
+stocks = yf.download("^IXIC AAPL MSFT AMZN NVDA TSLA GOOGL GOOG META AVGO PEP",period = "24mo")
 for col in stocks.columns:
     stocks[col]=(stocks[col]-stocks[col].min())/(stocks[col].max()-stocks[col].min())
 
@@ -69,6 +70,14 @@ output_sequence_length = 3
 # print(xClose.head())
 stocksTotalLstmX = conver_to_lstm_data(stocksTotal,input_sequence_length)[:-output_sequence_length,:,:,:]
 stocksTotalLstmY = conver_to_lstm_data(stocksTotalY,output_sequence_length)[input_sequence_length:,:,:,:]
+
+stop = int(len(stocksTotalLstmX)*0.7)
+
+stocksTotalLstmXTrain = stocksTotalLstmX[:stop,:,:,:]
+stocksTotalLstmXTest = stocksTotalLstmX[stop:,:,:,:]
+stocksTotalLstmYTrain = stocksTotalLstmY[:stop,:,:,:]
+stocksTotalLstmYTest = stocksTotalLstmY[stop:,:,:,:]
+
 input_size = 110
 output_size = 6 
 hidden_size = 40
@@ -81,19 +90,70 @@ hidden_size = 40
 # input_size = 10
 # hidden_size = 64
 # output_size = 1
+
 lr = 0.01
-iterations=100
+iterations=1000
+fig, (ax1,ax2) = plt.subplots(2,1)
+fig.set_figheight(15)
+fig.set_figwidth(20)
+data = {"autocorrelated":[],"not":[]}
 for weight_decay in [0]:
-    ff_nn = NN(input_size,hidden_size,output_size,lr=lr,weight_decay=weight_decay)
-    ff_nn.train(iterations,stocksTotalLstmX,stocksTotalLstmY)
-fig, (ax1,ax2) = plt.subplots(1,2)
-for stream in range(len(stocksTotalLstmX)):    
-    outputs = ff_nn.forward(torch.flatten(torch.tensor(stocksTotalLstmX[stream,:,:,:]))).cpu().detach().numpy().reshape(3,2)
-    ax1.scatter([stream,stream+1,stream+2],outputs[:,0],color="green")
-    ax2.scatter([stream,stream+1,stream+2],outputs[:,1],color="green")
-    ax1.scatter([stream,stream+1,stream+2],stocksTotalLstmY[stream,:,0,0],color="red",marker="x")
-    ax2.scatter([stream,stream+1,stream+2],stocksTotalLstmY[stream,:,:,1],color="red",marker="x")
-plt.show()
+    for autocorr in [True,False]:
+        ff_nn = NN(input_size,hidden_size,output_size,lr=lr,weight_decay=weight_decay)
+        ff_nn.train(iterations,stocksTotalLstmXTrain,stocksTotalLstmYTrain,autocorr=autocorr)
+        for stream in range(len(stocksTotalLstmXTest)):
+            # if stream % 3 == 0:    
+            outputs = ff_nn.forward(torch.flatten(torch.tensor(stocksTotalLstmXTest[stream,:,:,:]))).cpu().detach().numpy().reshape(3,2)
+            if autocorr:
+                data["autocorrelated"].append(outputs)
+            else:
+                data["not"].append(outputs)                
+count = 0
+count0 = []
+count1 = []
+count2  = [] 
+bluedata = []
+orangedata = []
+purpledata = []
+for stream in data["autocorrelated"]:
+    count0.append(count)
+    count1.append(count+1)
+    count2.append(count+2)
+    bluedata.append(stream[0,0])
+    orangedata.append(stream[1,0])
+    purpledata.append(stream[2,0])
+    # ax1.scatter([count],stream[0,0],color="blue")
+    # ax1.scatter([count+1],stream[1,0],color="orange")
+    # ax1.scatter([count+2],stream[2,0],color="purple")
+    count +=1
+ax1.plot(count0,bluedata,color="blue")
+ax1.plot(count1,orangedata,color="orange")
+ax1.plot(count2,purpledata,color="purple")
+ax1.title.set_text('Autocorrelated')
+ax1.set_xlim(0,150)
+count = 0
+count0 = []
+count1 = []
+count2  = [] 
+bluedata = []
+orangedata = []
+purpledata = []
+for stream in data["not"]:
+    count0.append(count)
+    count1.append(count+1)
+    count2.append(count+2)
+    bluedata.append(stream[0,0])
+    orangedata.append(stream[1,0])
+    purpledata.append(stream[2,0])
+    count +=1
+ax2.title.set_text('Not Autocorrelated')
+ax2.plot(count0,bluedata,color="blue")
+ax2.plot(count1,orangedata,color="orange")
+ax2.plot(count2,purpledata,color="purple")
+ax2.set_xlim(0,150)
+ax1.plot(stocksTotalY[stop:,0,0],color="green")
+ax2.plot(stocksTotalY[stop:,0,0],color="green")
+plt.savefig("feedforward_autocorr.png")
 # time_lstm =conver_to_lstm_data(stocks.index,input_sequence_length)
 
 # y_train = conver_to_lstm_data(y[0:stop],output_sequence_length)
