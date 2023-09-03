@@ -4,6 +4,7 @@ from model import *
 import matplotlib.pyplot as plt
 import torch
 from scipy.signal import correlate
+import statsmodels.api as sm
 
 def conver_to_lstm_data(data,sequence_length):
     data =np.array(data)
@@ -78,6 +79,19 @@ stocksTotalLstmXTest = stocksTotalLstmX[stop:,:,:,:]
 stocksTotalLstmYTrain = stocksTotalLstmY[:stop,:,:,:]
 stocksTotalLstmYTest = stocksTotalLstmY[stop:,:,:,:]
 
+
+# Load your time series data into a DataFrame (assuming 'data' contains your data)
+# Specify the order of the MA component (q)
+q = 2
+# Fit the ARIMA model
+model = sm.tsa.ARIMA(endog=stocksTotalLstmY[:stop,0,0,0], order=(input_sequence_length-5, 0, input_sequence_length))# ARIMA(0,0,q) for MA(q)
+results = model.fit()
+params_names =results.param_names
+params = results.params
+params = dict(zip(params_names,params))
+
+# Access the estimated MA coefficients
+
 input_size = 110
 output_size = 6 
 hidden_size = 40
@@ -92,14 +106,14 @@ hidden_size = 40
 # output_size = 1
 
 lr = 0.01
-iterations=100
+iterations=200
 fig, (ax1,ax2) = plt.subplots(2,1)
 fig.set_figheight(15)
 fig.set_figwidth(20)
 data = {"autocorrelated":[],"not":[]}
 for weight_decay in [0]:
     for autocorr in [True,False]:
-        ff_nn = NN(input_size,hidden_size,output_size,lr=lr,weight_decay=weight_decay)
+        ff_nn = NN(input_size,hidden_size,output_size,lr=lr,weight_decay=weight_decay,params=params)
         ff_nn.train(iterations,stocksTotalLstmXTrain,stocksTotalLstmYTrain,autocorr=autocorr)
         for stream in range(len(stocksTotalLstmXTest)):
             # if stream % 3 == 0:    
@@ -143,13 +157,13 @@ ax2.title.set_text('Not Autocorrelated')
 # ax2.scatter(count1,unfolded["not"][1],color="orange")
 # ax2.scatter(count2,unfolded["not"][2],color="purple")
 ax2.set_xlim(0,150)
-ax1.plot(stocksTotalY[stop:,0,0],color="green")
-ax2.plot(stocksTotalY[stop:,0,0],color="green")
+ax1.plot(stocksTotalY[stop+3:-3,0,0],color="green")
+ax2.plot(stocksTotalY[stop+3:-3,0,0],color="green")
 plt.savefig("feedforward_autocorr.png")
 
 
 plt.figure(figsize=(20,15))
-plt.plot(stocksTotalY[stop:,0,0],color="green")
+plt.plot(stocksTotalY[stop+3:-3,0,0],color="green")
 plt.plot(count0,unfolded["not"][0],color="red")
 plt.plot(count0,unfolded["autocorrelated"][0],color="salmon")
 plt.savefig("feedforward_autocorr_justones.png")

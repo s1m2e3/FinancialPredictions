@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torch.nn as nn
-import pytorch_forecasting 
+# import pytorch_forecasting 
 
 
 def reshape_tensor(x, batch_size):
@@ -13,7 +13,7 @@ def reshape_tensor(x, batch_size):
     return x.view(new_shape)
 
 class NN(nn.Module):
-    def __init__(self, input_size1, hidden_size, output_size,lr,weight_decay):
+    def __init__(self, input_size1, hidden_size, output_size,lr,weight_decay,params):
         super(NN, self).__init__()
         
         if torch.cuda.is_available():
@@ -21,9 +21,9 @@ class NN(nn.Module):
         else:
             dev = "cpu"
         self.number_of_nodes = hidden_size
-        self.fc1 = nn.Linear(input_size1, hidden_size,dtype=torch.float).to(dev)
+        self.fc1 = nn.Linear(input_size1, output_size,dtype=torch.float).to(dev)
         self.relu = nn.ReLU().to(dev)
-        self.fc2 = nn.Linear(hidden_size, hidden_size,dtype=torch.float).to(dev)
+        self.fc2 = nn.Linear(output_size, hidden_size,dtype=torch.float).to(dev)
         self.relu = nn.ReLU().to(dev)
         self.fc3 = nn.Linear(hidden_size, output_size,dtype=torch.float).to(dev)
         self.optimizer = torch.optim.SGD(self.parameters(),lr=lr,weight_decay=weight_decay)
@@ -43,8 +43,19 @@ class NN(nn.Module):
         out = self.fc3(out)
 
         return out
+    def forward_linear(self,x):
+        if torch.cuda.is_available():
+            dev = "cuda:0"
+            
+        else:
+            dev = "cpu"
+        device = torch.device(dev)
+        out = torch.tensor(x,dtype=torch.float).to(device)
+        out = self.fc1(out)
+       
+        return out
 
-    def train(self,num_epochs,x_train_data,y_train_data,autocorr=False,lambda_=0.001):
+    def train(self,num_epochs,x_train_data,y_train_data,autocorr=False,lambda_=0.1):
         if torch.cuda.is_available():
             dev = "cuda:0"
         else:
@@ -62,12 +73,13 @@ class NN(nn.Module):
                 outputs = self.forward(torch.flatten(x_train_data[stream,:,:,:]))
                 loss = self.criterion(outputs, torch.flatten(y_train_data[stream,:,:,:]))
                 if autocorr and stream<len(x_train_data)-4:
-                    outputs1 = outputs[0:3]
-                    outputs2 = self.forward(torch.flatten(x_train_data[stream+3,:,:,:]))[0:3]
-                    loss += ((outputs1[-1]-outputs2[0])**2).mean()*lambda_
-                    loss += (outputs1[0]-outputs1[1])**2*lambda_
-                    loss += (outputs1[1]-outputs1[2])**2*lambda_
-                    
+                    # outputs1 = outputs[0:3]
+                    # outputs2 = self.forward(torch.flatten(x_train_data[stream+3,:,:,:]))[0:3]
+                    # loss += ((outputs1[-1]-outputs2[0])**2).mean()*lambda_
+                    # loss += (outputs1[0]-outputs1[1])**2*lambda_
+                    # loss += (outputs1[1]-outputs1[2])**2*lambda_
+                    outputs_arima = self.forward_linear(torch.flatten(x_train_data[stream,:,:,:]))
+                    loss += self.criterion(outputs_arima, torch.flatten(y_train_data[stream,:,:,:]))*lambda_
                 loss.backward()
                 self.optimizer.step()
                 
