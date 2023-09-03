@@ -84,18 +84,20 @@ p = 1
 # # Fit the ARIMA model
 # for i in range(9):
     # for j in [4,5]:
-model = sm.tsa.ARIMA(endog=stocksTotalY[:stop,0,0], order=(1, 1, q))# ARIMA(p,d,q) 
+model = sm.tsa.ARIMA(endog=stocksTotalY[:stop,0,0], order=(9, 1, 5))# ARIMA(p,d,q) 
 results = model.fit()
-print(results.summary())
-model = sm.tsa.SARIMAX(endog=stocksTotalY[:stop,0,0], order=(1, 1, 0))# ARIMA(p,d,q) 
-results = model.fit()
+# model = sm.tsa.SARIMAX(endog=stocksTotalY[:stop,0,0], order=(1, 1, 0))# ARIMA(p,d,q) 
+# results = model.fit()
 print(results.summary())
 
-params_names =results.param_names
-params = results.params
-params = dict(zip(params_names,params))
-print(params)
-
+# params_names =results.param_names
+# params = results.params
+# params = dict(zip(params_names,params))
+# print(params)
+plt.figure()
+plt.plot(stocksTotalY[stop:stop+50,0,0])
+plt.plot(results.forecast(50))
+plt.show()
 # xColumns = ["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "GOOGL","GOOG", "META", "AVGO", "PEP"]
 # y=["^IXIC"]
 # xClose = stocksClose[["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "GOOGL","GOOG", "META", "AVGO", "PEP"]]
