@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 import torch
 from scipy.signal import correlate
 import statsmodels.api as sm
-
+from statsmodels.tsa.stattools import adfuller
+from pmdarima import auto_arima
 def conver_to_lstm_data(data,sequence_length):
     data =np.array(data)
     new_shape = [data.shape[0]-sequence_length]
@@ -34,7 +35,7 @@ def conver_to_lstm_data(data,sequence_length):
     Broadcom (AVGO): 1.63%
     Pepsico (PEP): 1.15%3
 """
-stocks = yf.download("^IXIC AAPL MSFT AMZN NVDA TSLA GOOGL GOOG META AVGO PEP",period = "24mo")
+stocks = yf.download("^IXIC AAPL MSFT AMZN NVDA TSLA GOOGL GOOG META AVGO PEP",period = "60mo")
 for col in stocks.columns:
     stocks[col]=(stocks[col]-stocks[col].min())/(stocks[col].max()-stocks[col].min())
 
@@ -53,10 +54,48 @@ stocksVolumeY = np.array(stocks["Volume"])[:,0]
 stocksVolume.shape = (stocksVolume.shape[0],stocksVolume.shape[1],1)
 stocksVolumeX.shape = (stocksVolumeX.shape[0],stocksVolumeX.shape[1],1)
 stocksVolumeY.shape = (stocksVolumeY.shape[0],1,1)
-# stocksTime = np.array(stocks.index) 
+stocksTime = np.array(stocks.index) 
 
 stocksTotal = np.append(stocksClose,stocksVolume,axis=2)
 stocksTotalY = np.append(stocksCloseY,stocksVolumeY,axis=2)
+stop = int(len(stocksTotalY)*0.7)
+
+p_values=[]
+for i in [0,1,2,3,4,5]:
+    if i>0:
+        data = np.diff(data)
+        
+    else:
+        data=stocksTotalY[:stop,0,0]
+        
+    # Perform the ADF test
+    result = adfuller(data)
+
+    # Extract and print the test statistic and p-value
+    test_statistic, p_value, _, _, _, _ = result
+    p_values.append(p_value)
+d=np.argmin(p_values)
+q = 5
+p = 1
+# Apply auto_arima to find the best ARIMA model
+# stepwise_model_open = auto_arima(stocksTotalY[:stop,0,0], trace=True,
+                            # error_action='ignore', suppress_warnings=True, stepwise=True)
+# Print the summary of the best model
+# # Fit the ARIMA model
+# for i in range(9):
+    # for j in [4,5]:
+model = sm.tsa.ARIMA(endog=stocksTotalY[:stop,0,0], order=(1, 1, q))# ARIMA(p,d,q) 
+results = model.fit()
+print(results.summary())
+model = sm.tsa.SARIMAX(endog=stocksTotalY[:stop,0,0], order=(1, 1, 0))# ARIMA(p,d,q) 
+results = model.fit()
+print(results.summary())
+
+params_names =results.param_names
+params = results.params
+params = dict(zip(params_names,params))
+print(params)
+
 # xColumns = ["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "GOOGL","GOOG", "META", "AVGO", "PEP"]
 # y=["^IXIC"]
 # xClose = stocksClose[["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "GOOGL","GOOG", "META", "AVGO", "PEP"]]
@@ -69,104 +108,94 @@ output_sequence_length = 3
 
 # lstm = LSTM(x.shape[1],hidden,layers,y.shape[1],input_sequence_length,output_sequence_length)
 # print(xClose.head())
-stocksTotalLstmX = conver_to_lstm_data(stocksTotal,input_sequence_length)[:-output_sequence_length,:,:,:]
-stocksTotalLstmY = conver_to_lstm_data(stocksTotalY,output_sequence_length)[input_sequence_length:,:,:,:]
-
-stop = int(len(stocksTotalLstmX)*0.7)
-
-stocksTotalLstmXTrain = stocksTotalLstmX[:stop,:,:,:]
-stocksTotalLstmXTest = stocksTotalLstmX[stop:,:,:,:]
-stocksTotalLstmYTrain = stocksTotalLstmY[:stop,:,:,:]
-stocksTotalLstmYTest = stocksTotalLstmY[stop:,:,:,:]
+# stocksTotalLstmX = conver_to_lstm_data(stocksTotal,input_sequence_length)[:-output_sequence_length,:,:,:]
+# stocksTotalLstmY = conver_to_lstm_data(stocksTotalY,output_sequence_length)[input_sequence_length:,:,:,:]
 
 
-# Load your time series data into a DataFrame (assuming 'data' contains your data)
-# Specify the order of the MA component (q)
-q = 2
-# Fit the ARIMA model
-model = sm.tsa.ARIMA(endog=stocksTotalLstmY[:stop,0,0,0], order=(input_sequence_length-5, 0, input_sequence_length))# ARIMA(0,0,q) for MA(q)
-results = model.fit()
-params_names =results.param_names
-params = results.params
-params = dict(zip(params_names,params))
 
-# Access the estimated MA coefficients
-
-input_size = 110
-output_size = 6 
-hidden_size = 40
-# stocksClose = conver_to_lstm_data(xClose,input_sequence_length)
-# stocksVolume = conver_to_lstm_data(xVolume,input_sequence_length)
-# stocksTime = conver_to_lstm_data(yClose,input_sequence_length)
-# stocksVolumeY = conver_to_lstm_data(yVolume,input_sequence_length)
-# print(stocksCloseX.shape)
-# print(stocksCloseY.shape)
-# input_size = 10
-# hidden_size = 64
-# output_size = 1
-
-lr = 0.01
-iterations=200
-fig, (ax1,ax2) = plt.subplots(2,1)
-fig.set_figheight(15)
-fig.set_figwidth(20)
-data = {"autocorrelated":[],"not":[]}
-for weight_decay in [0]:
-    for autocorr in [True,False]:
-        ff_nn = NN(input_size,hidden_size,output_size,lr=lr,weight_decay=weight_decay,params=params)
-        ff_nn.train(iterations,stocksTotalLstmXTrain,stocksTotalLstmYTrain,autocorr=autocorr)
-        for stream in range(len(stocksTotalLstmXTest)):
-            # if stream % 3 == 0:    
-            outputs = ff_nn.forward(torch.flatten(torch.tensor(stocksTotalLstmXTest[stream,:,:,:]))).cpu().detach().numpy().reshape(3,2)
-            if autocorr:
-                data["autocorrelated"].append(outputs)
-            else:
-                data["not"].append(outputs)                
-count = 0
-count0 = []
-count1 = []
-count2  = [] 
-unfolded={"autocorrelated":{0:[],1:[],2:[]},"not":{0:[],1:[],2:[]}}
-for stream in data["autocorrelated"]:
-    count0.append(count)
-    count1.append(count+1)
-    count2.append(count+2)
-    unfolded["autocorrelated"][0].append(stream[0,0])
-    unfolded["autocorrelated"][1].append(stream[1,0])
-    unfolded["autocorrelated"][2].append(stream[2,0])
-    ax1.plot([count,count+1,count+2],stream[:,0])
-    # ax1.scatter([count+1],stream[1,0],color="orange")
-    # ax1.scatter([count+2],stream[2,0],color="purple")
-    count +=1
-# ax1.scatter(count0,unfolded["autocorrelated"][0],color="blue")
-# ax1.scatter(count1,unfolded["autocorrelated"][1],color="orange")
-# ax1.scatter(count2,unfolded["autocorrelated"][2],color="purple")
-ax1.title.set_text('Autocorrelated')
-ax1.set_xlim(0,150)
-count = 0
+# stocksTotalLstmXTrain = stocksTotalLstmX[:stop,:,:,:]
+# stocksTotalLstmXTest = stocksTotalLstmX[stop:,:,:,:]
+# stocksTotalLstmYTrain = stocksTotalLstmY[:stop,:,:,:]
+# stocksTotalLstmYTest = stocksTotalLstmY[stop:,:,:,:]
 
 
-for stream in data["not"]:
-    unfolded["not"][0].append(stream[0,0])
-    unfolded["not"][1].append(stream[1,0])
-    unfolded["not"][2].append(stream[2,0])
-    ax2.plot([count,count+1,count+2],stream[:,0])
-    count +=1
-ax2.title.set_text('Not Autocorrelated')
-# ax2.scatter(count0,unfolded["not"][0],color="blue")
-# ax2.scatter(count1,unfolded["not"][1],color="orange")
-# ax2.scatter(count2,unfolded["not"][2],color="purple")
-ax2.set_xlim(0,150)
-ax1.plot(stocksTotalY[stop+3:-3,0,0],color="green")
-ax2.plot(stocksTotalY[stop+3:-3,0,0],color="green")
-plt.savefig("feedforward_autocorr.png")
 
 
-plt.figure(figsize=(20,15))
-plt.plot(stocksTotalY[stop+3:-3,0,0],color="green")
-plt.plot(count0,unfolded["not"][0],color="red")
-plt.plot(count0,unfolded["autocorrelated"][0],color="salmon")
-plt.savefig("feedforward_autocorr_justones.png")
+# input_size = 110
+# output_size = 6 
+# hidden_size = 40
+# # stocksClose = conver_to_lstm_data(xClose,input_sequence_length)
+# # stocksVolume = conver_to_lstm_data(xVolume,input_sequence_length)
+# # stocksTime = conver_to_lstm_data(yClose,input_sequence_length)
+# # stocksVolumeY = conver_to_lstm_data(yVolume,input_sequence_length)
+# # print(stocksCloseX.shape)
+# # print(stocksCloseY.shape)
+# # input_size = 10
+# # hidden_size = 64
+# # output_size = 1
+
+# lr = 0.01
+# iterations=200
+# fig, (ax1,ax2) = plt.subplots(2,1)
+# fig.set_figheight(15)
+# fig.set_figwidth(20)
+# data = {"autocorrelated":[],"not":[]}
+# for weight_decay in [0]:
+#     for autocorr in [True,False]:
+#         ff_nn = NN(input_size,hidden_size,output_size,lr=lr,weight_decay=weight_decay,params=params)
+#         ff_nn.train(iterations,stocksTotalLstmXTrain,stocksTotalLstmYTrain,autocorr=autocorr)
+#         for stream in range(len(stocksTotalLstmXTest)):
+#             # if stream % 3 == 0:    
+#             outputs = ff_nn.forward(torch.flatten(torch.tensor(stocksTotalLstmXTest[stream,:,:,:]))).cpu().detach().numpy().reshape(3,2)
+#             if autocorr:
+#                 data["autocorrelated"].append(outputs)
+#             else:
+#                 data["not"].append(outputs)                
+# count = 0
+# count0 = []
+# count1 = []
+# count2  = [] 
+# unfolded={"autocorrelated":{0:[],1:[],2:[]},"not":{0:[],1:[],2:[]}}
+# for stream in data["autocorrelated"]:
+#     count0.append(count)
+#     count1.append(count+1)
+#     count2.append(count+2)
+#     unfolded["autocorrelated"][0].append(stream[0,0])
+#     unfolded["autocorrelated"][1].append(stream[1,0])
+#     unfolded["autocorrelated"][2].append(stream[2,0])
+#     ax1.plot([count,count+1,count+2],stream[:,0])
+#     # ax1.scatter([count+1],stream[1,0],color="orange")
+#     # ax1.scatter([count+2],stream[2,0],color="purple")
+#     count +=1
+# # ax1.scatter(count0,unfolded["autocorrelated"][0],color="blue")
+# # ax1.scatter(count1,unfolded["autocorrelated"][1],color="orange")
+# # ax1.scatter(count2,unfolded["autocorrelated"][2],color="purple")
+# ax1.title.set_text('Autocorrelated')
+# ax1.set_xlim(0,150)
+# count = 0
+
+
+# for stream in data["not"]:
+#     unfolded["not"][0].append(stream[0,0])
+#     unfolded["not"][1].append(stream[1,0])
+#     unfolded["not"][2].append(stream[2,0])
+#     ax2.plot([count,count+1,count+2],stream[:,0])
+#     count +=1
+# ax2.title.set_text('Not Autocorrelated')
+# # ax2.scatter(count0,unfolded["not"][0],color="blue")
+# # ax2.scatter(count1,unfolded["not"][1],color="orange")
+# # ax2.scatter(count2,unfolded["not"][2],color="purple")
+# ax2.set_xlim(0,150)
+# ax1.plot(stocksTotalY[stop+3:-3,0,0],color="green")
+# ax2.plot(stocksTotalY[stop+3:-3,0,0],color="green")
+# plt.savefig("feedforward_autocorr.png")
+
+
+# plt.figure(figsize=(20,15))
+# plt.plot(stocksTotalY[stop+3:-3,0,0],color="green")
+# plt.plot(count0,unfolded["not"][0],color="red")
+# plt.plot(count0,unfolded["autocorrelated"][0],color="salmon")
+# plt.savefig("feedforward_autocorr_justones.png")
 # time_lstm =conver_to_lstm_data(stocks.index,input_sequence_length)
 
 # y_train = conver_to_lstm_data(y[0:stop],output_sequence_length)
