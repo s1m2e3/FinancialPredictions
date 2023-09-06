@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import torch.nn as nn
+import statsmodels.api as sm
 # import pytorch_forecasting 
 
 
@@ -13,7 +14,7 @@ def reshape_tensor(x, batch_size):
     return x.view(new_shape)
 
 class NN(nn.Module):
-    def __init__(self, input_size1, hidden_size, output_size,lr,weight_decay,params):
+    def __init__(self, input_size1, hidden_size, output_size,lr,weight_decay,sarimax=None):
         super(NN, self).__init__()
         
         if torch.cuda.is_available():
@@ -21,13 +22,14 @@ class NN(nn.Module):
         else:
             dev = "cpu"
         self.number_of_nodes = hidden_size
-        self.fc1 = nn.Linear(input_size1, output_size,dtype=torch.float).to(dev)
+        self.fc1 = nn.Linear(in_features=input_size1,  out_features=output_size,dtype=torch.float).to(dev)
         self.relu = nn.ReLU().to(dev)
-        self.fc2 = nn.Linear(output_size, hidden_size,dtype=torch.float).to(dev)
+        self.fc2 = nn.Linear(in_features= output_size, out_features=hidden_size,dtype=torch.float).to(dev)
         self.relu = nn.ReLU().to(dev)
-        self.fc3 = nn.Linear(hidden_size, output_size,dtype=torch.float).to(dev)
+        self.fc3 = nn.Linear(in_features= hidden_size, out_features=output_size,dtype=torch.float).to(dev)
         self.optimizer = torch.optim.SGD(self.parameters(),lr=lr,weight_decay=weight_decay)
         self.criterion = nn.MSELoss()
+        self.sarimax = sarimax
     def forward(self, x):
         if torch.cuda.is_available():
             dev = "cuda:0"
@@ -52,38 +54,46 @@ class NN(nn.Module):
         device = torch.device(dev)
         out = torch.tensor(x,dtype=torch.float).to(device)
         out = self.fc1(out)
-       
+        out = self.relu(out)
+        
         return out
 
-    def train(self,num_epochs,x_train_data,y_train_data,autocorr=False,lambda_=0.1):
+    def sarimax_pred(self,stream):
+        self.sarimax = self.sarimax.append([stream[-1]],disp=False)
+        return torch.tensor(self.sarimax.forecast(3),dtype=torch.float)
+
+    def train(self,num_epochs,x_train_data,y_train_data,autocorr=False,lambda_=0.001):
         if torch.cuda.is_available():
             dev = "cuda:0"
         else:
             dev = "cpu"
         device = torch.device(dev)
-        x_train_data = torch.tensor(np.array(x_train_data),dtype=torch.float).to(device)
+        if autocorr:
+            sarimax_data = [list(x_train_data[stream,:,0]) for stream in range(len(x_train_data))]
+            sarimax_predictions = [self.sarimax_pred(sarimax_data[i]) for i in range(len(sarimax_data))]
+            sarimax_predictions_tensor=sarimax_predictions[0]
+            for i in range(len(sarimax_predictions)-1):
+                sarimax_predictions_tensor=torch.vstack((sarimax_predictions_tensor,sarimax_predictions[i+1])) 
+        
+        x_train_data = torch.tensor(np.array(x_train_data),dtype=torch.float).to(device).reshape(len(x_train_data),50)
         y_train_data = torch.tensor(np.array(y_train_data),dtype=torch.float).to(device)
         
         # print(self.forward(x_train_data)-y_train_data)
         # print(self.criterion(self.forward(x_train_data),y_train_data))
         for epoch in range(num_epochs):
-            for stream in range(len(x_train_data)):    
-
-                self.optimizer.zero_grad()
-                outputs = self.forward(torch.flatten(x_train_data[stream,:,:,:]))
-                loss = self.criterion(outputs, torch.flatten(y_train_data[stream,:,:,:]))
-                if autocorr and stream<len(x_train_data)-4:
-                    # outputs1 = outputs[0:3]
-                    # outputs2 = self.forward(torch.flatten(x_train_data[stream+3,:,:,:]))[0:3]
-                    # loss += ((outputs1[-1]-outputs2[0])**2).mean()*lambda_
-                    # loss += (outputs1[0]-outputs1[1])**2*lambda_
-                    # loss += (outputs1[1]-outputs1[2])**2*lambda_
-                    outputs_arima = self.forward_linear(torch.flatten(x_train_data[stream,:,:,:]))
-                    loss += self.criterion(outputs_arima, torch.flatten(y_train_data[stream,:,:,:]))*lambda_
-                loss.backward()
-                self.optimizer.step()
-                
-            # Print training statistics
+            self.optimizer.zero_grad()
+            outputs = self.forward(x_train_data)
+            
+            loss = self.criterion(outputs, y_train_data)
+            if autocorr:
+                output_first=self.forward_linear(x_train_data)
+                loss += self.criterion(output_first,sarimax_predictions_tensor)*lambda_
+            
+            loss.backward()
+            
+            self.optimizer.step()
+        # print(epoch)    
+        # Print training statistics
             if (epoch+1) % 10 == 0:
                 # print("Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}"
                     # .format(epoch+1, num_epochs, epoch+1, len(x_train_data), loss.item()))
