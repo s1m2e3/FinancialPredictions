@@ -61,7 +61,7 @@ def conver_to_lstm_data(data,sequence_length):
 """
 
 sns.set_theme()
-stocks = yf.download("^IXIC AAPL MSFT AMZN NVDA TSLA GOOGL GOOG META AVGO",period = "60mo")
+stocks = yf.download("^IXIC AAPL MSFT AMZN NVDA TSLA GOOGL GOOG META AVGO",period = "36mo")
 for col in stocks.columns:
     stocks[col]=(stocks[col]-stocks[col].min())/(stocks[col].max()-stocks[col].min())
 

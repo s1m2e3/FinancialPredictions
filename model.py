@@ -60,7 +60,7 @@ class NN(nn.Module):
 
     def sarimax_pred(self,stream):
         self.sarimax = self.sarimax.append([stream[-1]],disp=False)
-        return torch.tensor(self.sarimax.forecast(3),dtype=torch.float)
+        return torch.tensor(self.sarimax.forecast(),dtype=torch.float)
 
     def train(self,num_epochs,x_train_data,y_train_data,autocorr=False,lambda_=0.001):
         if torch.cuda.is_available():
@@ -86,7 +86,7 @@ class NN(nn.Module):
             
             loss = self.criterion(outputs, y_train_data)
             if autocorr:
-                output_first=self.forward_linear(x_train_data)
+                output_first=self.forward_linear(x_train_data)[:,0]
                 loss += self.criterion(output_first,sarimax_predictions_tensor)*lambda_
             
             loss.backward()
