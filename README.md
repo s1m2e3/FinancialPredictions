@@ -120,8 +120,7 @@ Read these before comparing your numbers to the committed figures.
 
 ## Context
 
-Listed under Projects as *Neural Network enhanced predictions for financial
-time-series*. The prior-as-regulariser pattern is the same one used in
+Listed under Projects as *Physics-Informed Financial Time-Series Prediction*. The prior-as-regulariser pattern is the same one used in
 [PINN-Bicycle-Model](https://github.com/s1m2e3/PINN-Bicycle-Model), where the
 prior is vehicle dynamics rather than an autoregressive model.
 
