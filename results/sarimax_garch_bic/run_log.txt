@@ -1,0 +1,32 @@
+mean equation SARIMA(2,1,2)(0,0,1)[5]; train 2013, val 503, test 752 days
+train-window fits: 10s
+walk-forward: 12 refits, 5000 paths per origin, 166s
+
+                                      comparison  1d log-score gain / day      p  CRPS gain 1 day (%)  p 1 day  CRPS gain 3 days (%)  p 3 days  CRPS gain 1 week (%)  p 1 week  CRPS gain 2 weeks (%)  p 2 weeks  CRPS gain 1 month (%)  p 1 month
+step                                                                                                                                                                                                                                              
+fat tails                   SARIMAX-t vs SARIMAX                    0.081  0.140                1.883    0.003                 1.511     0.036                 1.609     0.136                  2.556      0.163                  3.420      0.357
+GARCH variance             Two-step vs SARIMAX-t                    0.023  0.169               -0.213    0.800                 1.255     0.243                 1.641     0.145                  0.778      0.612                  0.571      0.853
+joint estimation               Joint vs Two-step                    0.022  0.001                2.064    0.002                 0.936     0.092                 0.899     0.296                  1.932      0.204                  3.180      0.325
+skewed errors              Joint skew-t vs Joint                    0.003  0.598                0.165    0.327                -0.164     0.580                -0.258     0.602                 -0.804      0.407                 -1.367      0.511
+GARCH-in-mean     Full (GARCH-M) vs Joint skew-t                    0.000  0.939               -0.102    0.584                 0.127     0.757                 0.180     0.776                  0.344      0.760                  0.189      0.933
+total                  Full (GARCH-M) vs SARIMAX                    0.129  0.042                3.765    0.000                 3.620     0.005                 4.019     0.011                  4.748      0.061                  5.932      0.214
+
+                      SARIMAX  SARIMAX-t  Two-step   Joint  Joint skew-t  Full (GARCH-M)
+   test, 1 day ahead                                                                    
+1  CRPS                0.6839     0.6710    0.6725  0.6586        0.6575          0.6582
+   cover 90%           0.9208     0.8852    0.8661  0.8716        0.8593          0.8689
+   VaR 5% hit rate     0.0437     0.0683    0.0697  0.0765        0.0601          0.0587
+3  CRPS                1.1685     1.1509    1.1364  1.1258        1.1277          1.1262
+   cover 90%           0.9098     0.9071    0.8730  0.8634        0.8525          0.8538
+   VaR 5% hit rate     0.0464     0.0533    0.0642  0.0861        0.0751          0.0779
+5  CRPS                1.4780     1.4543    1.4304  1.4175        1.4212          1.4186
+   cover 90%           0.9085     0.9098    0.8798  0.8866        0.8661          0.8648
+   VaR 5% hit rate     0.0464     0.0546    0.0519  0.0628        0.0492          0.0533
+10 CRPS                2.0271     1.9753    1.9599  1.9220        1.9375          1.9308
+   cover 90%           0.9153     0.9262    0.8743  0.8907        0.8675          0.8607
+   VaR 5% hit rate     0.0437     0.0505    0.0574  0.0683        0.0574          0.0669
+21 CRPS                2.8084     2.7124    2.6969  2.6111        2.6469          2.6419
+   cover 90%           0.9208     0.9208    0.8934  0.9098        0.8798          0.8702
+   VaR 5% hit rate     0.0396     0.0546    0.0355  0.0519        0.0383          0.0601
+
+wrote C:\Users\samil\Documents\FinancialPredictions\results\sarimax_garch_bic

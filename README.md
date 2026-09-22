@@ -118,6 +118,62 @@ Read these before comparing your numbers to the committed figures.
   experiment does not call — the `statsmodels` SARIMAX object is used instead. It
   is left in place as a reference implementation.
 
+## SARIMAX–GARCH experiment (statistical models only)
+
+A separate experiment, independent of the neural network, asks what a GARCH
+conditional variance adds to a properly identified SARIMAX conditional mean, from
+one day to one month ahead. It works on `y = 100 log P` of `^IXIC`, 2013–2025.
+
+```
+differencing  w_t = (1-B)^d (1-B^s)^D y_t
+regression    w_t = c + beta' x_t + delta sigma_t + u_t              (delta: GARCH-in-mean)
+SARMA errors  phi(B) Phi(B^s) u_t = theta(B) Theta(B^s) eps_t
+variance      sigma_t^2 = omega + (alpha + gamma 1[eps_{t-1} < 0]) eps_{t-1}^2 + b sigma_{t-1}^2
+innovations   eps_t = sigma_t z_t,  z_t ~ normal, Student-t or Hansen skewed-t
+```
+
+**1. Identification** (`identification.py`, training window only, Box–Jenkins):
+unit-root tests (ADF, Phillips–Perron, KPSS) for d; OCSB, Canova–Hansen and STL
+seasonal strength for D at seasons of 5, 21, 63 and 252 days; seasonal Ljung–Box
+(classic and heteroskedasticity-robust) and a periodogram with Fisher's g test;
+calendar regressors (day of week, month, turn of month) and lagged constituent
+returns tested with HAC standard errors; then an AICc search over 400
+SARIMA(p,d,q)(P,D,Q)[s] models on a common sample, and residual diagnostics.
+The chosen specification is written to `results/identification/spec.json`.
+
+**2. Comparison** (`run_armagarch.py`): six models share that mean equation, each
+adding one thing: `sarimax` (constant variance, normal) → `sarimax_t` (fat tails)
+→ `two_step` (GJR-GARCH-t fitted on the SARIMAX residuals) → `joint` (estimated
+together) → `joint_skewt` (skewed-t) → `full` (GARCH-in-mean).
+
+The split is chronological: train 2013–2020, validation 2021–2022, test 2023–2025.
+The test window is walk-forward: every 63 trading days every model is refitted on
+everything before the block, then forecasts with frozen parameters. One-day
+densities are exact; for 1 day, 3 days, 1 week, 2 weeks and 1 month ahead, 5,000
+paths are simulated from every origin and the cumulative log return is scored by
+CRPS, interval coverage and VaR hit rates.
+
+```
+conda create -n financialPredictions python=3.11
+conda activate financialPredictions
+pip install -r requirements.txt
+python identification.py                     # Box-Jenkins; writes the spec (~15 min order search)
+python run_armagarch.py                      # six-model comparison, AICc order (~11 min)
+python run_armagarch.py --criterion BIC      # same with the BIC order
+python compare_specs.py                      # AICc order vs BIC order, head to head
+python checks/verify_against_libraries.py    # estimator and simulator checks
+```
+
+| file | role |
+|---|---|
+| `data.py` | download (cached to `data/prices.csv`), log prices, candidate regressors, split dates |
+| `armagarch.py` | model, numba filter and path simulator, L-BFGS fit, the six arms, walk-forward |
+| `identification.py` | Box–Jenkins identification; `results/identification/` |
+| `evaluation.py` | log score, CRPS, coverage, VaR backtests, Ljung–Box, Diebold–Mariano |
+| `run_armagarch.py` | the comparison; `results/sarimax_garch_<criterion>/metrics.md`, seven figures, `scores.npz` |
+| `compare_specs.py` | Diebold–Mariano tests of the AICc vs BIC orders; `results/spec_comparison/` |
+| `checks/verify_against_libraries.py` | vs statsmodels SARIMAX, arch GARCH and skewed-t, closed-form forecasts |
+
 ## Context
 
 Listed under Projects as *Physics-Informed Financial Time-Series Prediction*. The prior-as-regulariser pattern is the same one used in
