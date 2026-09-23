@@ -18,8 +18,13 @@ partner of the other while one is searched:
 ALLOCATION (fixed rules, not learned). With exposure f and portfolio value V the stocks
 may hold f * V. "hold" positions keep their shares; if they alone exceed f * V they are
 trimmed proportionally. What is left of f * V goes to the "buy" stocks by inverse
-forecast volatility (1 / sig_21d). Whole shares, long-only, no leverage, `cost_bps` on
-every traded dollar, cash at the 13-week T-bill rate.
+forecast volatility (1 / sig_21d). No position may exceed `max_weight` of f * V (1/3: at
+least three stocks to be fully invested); a buy that would is capped and its excess goes to
+the other buys, and what no stock can take stays in cash -- nothing is bought on the tree's
+behalf, so a tree that picks fewer than 1 / max_weight stocks pays for the idle cash. Long-only, no leverage, `cost_bps` on every traded
+dollar, cash at the 13-week T-bill rate. Shares are fractional (`fractional`, as Fidelity,
+Schwab, Robinhood or IBKR fill them) or whole: with $100k over ~115 stocks, whole shares
+leave 4-7% of the money idle and cannot buy a stock priced above its slice at all.
 
 TIMING. Decisions at the open every `decide_every` trading days, positions marked at
 every open in between: daily open-to-open returns. The benchmark is the S&P 500 WITH
@@ -65,6 +70,10 @@ EXPOSURE_LEVELS = (0.25, 0.50, 0.75, 1.00)
 EXPOSURE_ACTIONS = [f"invest {int(100 * x)}%" for x in EXPOSURE_LEVELS]
 EXIT, HOLD, BUY = 0, 1, 2
 OBJECTIVES = {"sharpe": 0, "cer": 1}
+# smallest position, dollars: brokers' minimum fractional order is $1-5, and without a floor
+# the budget left after trimming (zero up to rounding, +-1e-10) buys dust that then counts
+# as a holding
+MIN_POSITION = 1.0
 
 
 def calibrate_risk_aversion(panel, start, end):
@@ -94,8 +103,8 @@ class PortfolioWorld:
 
     def __init__(self, panel, F, M, stock_names, market_names, start, end, T=252,
                  decide_every=5, budget=100_000.0, cost_bps=5.0, source="yfinance-sp100",
-                 agent="stocks", objective="cer", risk_aversion=None,
-                 store_root=os.path.join(ROOT, "runs_bt")):
+                 agent="stocks", objective="cer", risk_aversion=None, fractional=False,
+                 max_weight=1.0, store_root=os.path.join(ROOT, "runs_bt")):
         # scalar attributes are the world's signature in btind's store
         self.split_start, self.split_end = str(start), str(end)
         self.T, self.decide_every = int(T), int(decide_every)
@@ -103,6 +112,13 @@ class PortfolioWorld:
         self.agent = str(agent)
         self.objective = str(objective)
         self.benchmark = "SPY total return"
+        self.fractional = bool(fractional)
+        self.max_weight = float(max_weight)
+        self.groups = "period"
+        # the acceptance test's groups: the calendar block of the episode's start (2006-09,
+        # 2010-14, 2015-19 on the training split), so a move that clearly loses over one
+        # stretch of history is rejected. Not the S&P regime: a rule may lose in strong
+        # rallies -- the price of backing off before a fall -- if it pays over each period
         # calibrated on THIS world's period unless given: pass the training value to the
         # validation and test worlds so nothing is calibrated on the future
         self.risk_aversion = float(risk_aversion if risk_aversion is not None
@@ -132,6 +148,7 @@ class PortfolioWorld:
         self._spx_ret = np.ascontiguousarray(np.r_[self._spx[1:] / self._spx[:-1] - 1.0, 0.0])
         self._starts = np.arange(a, b - self.T - 1)
         self._levels = np.array(EXPOSURE_LEVELS)
+        self._blocks = np.searchsorted(dates, [np.datetime64("2010-01-01"), np.datetime64("2015-01-01")])
         self.partner = None       # the other agent's bank; None = its constant default
 
     # ---------------------------------------------------------------- which agent is searched
@@ -186,9 +203,12 @@ class PortfolioWorld:
         pass
 
     def condition_groups(self, starts):
-        """0 = S&P down over the episode, 1 = up to +15%, 2 = up more than 15%."""
-        s = np.asarray(starts)
-        return np.digitize(self._spx[s + self.T] / self._spx[s] - 1.0, [0.0, 0.15])
+        """The period an episode starts in: 0 before 2010, 1 in 2010-2014, 2 from 2015.
+        btind rejects a move that loses significantly in any group: a rule that pays in one
+        stretch of history and clearly loses in another is fitting that history (stage 0 of
+        the first run: +16 %/yr in training, -15 on 2020-2021). Losing windows, years and
+        rallies are allowed; losing over a whole period is not."""
+        return np.searchsorted(self._blocks, np.asarray(starts), side="right")
 
     def coverage_rows(self, bank, n_ep=150, seed=0):
         """Rows of the searched agent for proposing guards: on-policy rows, and the rows of
@@ -222,7 +242,8 @@ class PortfolioWorld:
         turn = np.empty(E)
         _rollout(starts, int(T), self.decide_every, self._X, self._M, self._open, self._avail,
                  self._sig, self._rf, self._infl, self._spx_ret, self.budget, self.cost_bps * 1e-4,
-                 self._levels, OBJECTIVES[self.objective], self.risk_aversion,
+                 self._levels, OBJECTIVES[self.objective], self.risk_aversion, self.fractional,
+                 self.max_weight,
                  tick_args(fs), np.ascontiguousarray(fs["laws"]),
                  tick_args(fe), np.ascontiguousarray(fe["laws"]), G, D, turn, daily)
         out = {"G": G, "turnover": turn}
@@ -283,14 +304,18 @@ class PortfolioWorld:
             S = f * V
             over = K > S
             scale = np.where(over, S / np.maximum(K, 1e-12), 1.0)
-            B = np.where(over, 0.0, S - K)
+            cap = self.max_weight * S                          # largest position, dollars
+            kept = shares * np.minimum(scale[:, None], cap[:, None] / np.maximum(val, 1e-12))
+            B = np.maximum(S - np.where(keep, kept * np.nan_to_num(px), 0.0).sum(1), 0.0)
             inv_vol = np.where(buy, 1.0 / np.maximum(self._X[t][:, :, self._sig], 1e-6), 0.0)
-            w = inv_vol / np.maximum(inv_vol.sum(1, keepdims=True), 1e-12)
+            alloc = _capped_split(B, inv_vol, cap)
             px0 = np.where(np.isnan(px), np.inf, px)
-            target = np.floor(B[:, None] * w / (px0 * (1 + 2 * cost)))
-            kept = np.floor(shares * scale[:, None])
+            target = alloc / (px0 * (1 + 2 * cost))
+            if not self.fractional:
+                target, kept = np.floor(target), np.floor(kept)
             new = np.where(keep, kept, np.where(buy, target, 0.0))
             pxn = np.nan_to_num(px)
+            new = np.where(new * pxn < MIN_POSITION, 0.0, new)
             trade = (np.abs(new - shares) * pxn).sum(1)
             traded += trade / V
             cash = V - (new * pxn).sum(1) - trade * cost
@@ -326,6 +351,29 @@ class PortfolioWorld:
         return out
 
 
+def _capped_split(B, weights, cap):
+    """Split B[e] over the positive weights[e, :] in proportion, none above cap[e]
+    (water-filling): a share that would pass the cap is fixed at it and the rest re-split
+    among the others, each pass judged on that pass's budget; what no one can take is left."""
+    N = weights.shape[1]
+    live = weights > 0
+    capped = np.zeros(weights.shape, bool)
+    rem = np.asarray(B, float).copy()
+    for _ in range(N):
+        free = live & ~capped
+        wsum = np.where(free, weights, 0.0).sum(1)
+        share = np.where(free, rem[:, None] * weights / np.maximum(wsum, 1e-300)[:, None], 0.0)
+        new = free & (share > cap[:, None])
+        if not new.any():
+            break
+        capped |= new
+        rem = rem - new.sum(1) * cap
+    free = live & ~capped
+    wsum = np.where(free, weights, 0.0).sum(1)
+    share = np.where(free, np.maximum(rem, 0.0)[:, None] * weights / np.maximum(wsum, 1e-300)[:, None], 0.0)
+    return np.where(capped, cap[:, None], share)
+
+
 # ------------------------------------------------------------------ the compiled rollout
 @njit(cache=True, inline="always")
 def _tick_tree(z, latch, step, a):
@@ -352,7 +400,7 @@ def _argmax_law(z, width, laws, law):
 
 @njit(cache=True, parallel=True)
 def _rollout(starts, T, de, X, M, open_, avail, sig_col, rf, infl, spx_ret, budget, cost, levels,
-             objective, gamma, st, s_laws, et, e_laws, G, D, turnover, want_daily):
+             objective, gamma, frac, max_w, st, s_laws, et, e_laws, G, D, turnover, want_daily):
     E = starts.shape[0]
     Tall, N, F = X.shape
     Mw = M.shape[1]
@@ -367,6 +415,8 @@ def _rollout(starts, T, de, X, M, open_, avail, sig_col, rf, infl, spx_ret, budg
         step_s = np.zeros(N, np.int64)
         latch_e, step_e = -1, 0
         act = np.zeros(N, np.int64)
+        inv = np.zeros(N)
+        capped = np.zeros(N, np.bool_)
         z = np.zeros(F + 8)                      # obs (F + 6 portfolio columns), V_hat, leverage
         ze = np.zeros(Mw + 7)                    # market (Mw + 5 state columns), V_hat, leverage
         daily = np.zeros(T)
@@ -421,26 +471,56 @@ def _rollout(starts, T, de, X, M, open_, avail, sig_col, rf, infl, spx_ret, budg
             f = levels[_argmax_law(ze, Mw + 7, e_laws, law)]
             # --- allocation
             K = 0.0
-            inv_sum = 0.0
             for i in range(N):
                 if act[i] == 1 and shares[i] > 0:
                     K += shares[i] * open_[t, i]
-                if act[i] == 2:
-                    inv_sum += 1.0 / max(X[t, i, sig_col], 1e-6)
             S = f * V
-            over = K > S
-            B = 0.0 if over else S - K
-            scale = S / max(K, 1e-12) if over else 1.0
+            cap = max_w * S
+            scale = S / max(K, 1e-12) if K > S else 1.0
+            Kc = 0.0                                  # kept value after the trim and the cap
+            for i in range(N):
+                if act[i] == 1 and shares[i] > 0:
+                    Kc += min(shares[i] * open_[t, i] * scale, cap)
+            B = max(S - Kc, 0.0)
+            # buys by inverse volatility, none above the cap: water-filling
+            for i in range(N):
+                inv[i] = 1.0 / max(X[t, i, sig_col], 1e-6) if act[i] == 2 else 0.0
+                capped[i] = False
+            rem = B
+            for _ in range(N):
+                wsum = 0.0
+                for i in range(N):
+                    if inv[i] > 0 and not capped[i]:
+                        wsum += inv[i]
+                if wsum <= 0.0:
+                    break
+                n_new = 0
+                for i in range(N):              # judged on this pass's budget, then paid
+                    if inv[i] > 0 and not capped[i] and rem * inv[i] / wsum > cap:
+                        capped[i] = True
+                        n_new += 1
+                if n_new == 0:
+                    break
+                rem -= n_new * cap
+            rem = max(rem, 0.0)
+            wsum = 0.0
+            for i in range(N):
+                if inv[i] > 0 and not capped[i]:
+                    wsum += inv[i]
             spent = 0.0
             trade = 0.0
             for i in range(N):
                 px = open_[t, i]
                 if act[i] == 1 and shares[i] > 0:
-                    new = np.floor(shares[i] * scale)
+                    new = shares[i] * min(scale, cap / max(shares[i] * px, 1e-12))
                 elif act[i] == 2:
-                    w = (1.0 / max(X[t, i, sig_col], 1e-6)) / max(inv_sum, 1e-12)
-                    new = np.floor(B * w / (px * (1 + 2 * cost)))
+                    a = cap if capped[i] else (rem * inv[i] / wsum if wsum > 0.0 else 0.0)
+                    new = a / (px * (1 + 2 * cost))
                 else:
+                    new = 0.0
+                if not frac:
+                    new = np.floor(new)
+                if new * px < MIN_POSITION:
                     new = 0.0
                 if new > 0 or shares[i] > 0:
                     trade += abs(new - shares[i]) * px

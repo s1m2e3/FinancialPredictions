@@ -66,19 +66,36 @@ OUT = os.path.join(ROOT, "results", "portfolio_bt")
 PERIODS = {"validation 2020-2021": ("2020-01-01", VAL_END), "test 2022-2026": ("2022-01-01", END)}
 
 
+# The models' MEAN and DIRECTION forecasts (mu_h, pup_h, for every stock and the S&P 500)
+# are not inputs. The identification found no directional skill, and their levels drift
+# with every walk-forward refit, so to the search they were calendars: arms on spx_mu_10d
+# fired in whole stretches of particular years and in none of 2008 or 2022, and arms on
+# pup_1d helped in 2010-2019 and hurt in 2006-2009 and on validation. The risk forecasts
+# (sig_h, q05_h) -- where the models do have skill -- stay.
+DROPPED = ("mu_", "pup_", "rank_mu_", "rank_pup_", "spx_mu_", "spx_pup_")
+
+
 def load_features():
-    return _load_features(fundamentals=True)
+    F, M, sn, mn = _load_features(fundamentals=True)
+    ks = [i for i, n in enumerate(sn) if not n.startswith(DROPPED)]
+    km = [i for i, n in enumerate(mn) if not n.startswith(DROPPED)]
+    return F[:, :, ks], M[:, km], [sn[i] for i in ks], [mn[i] for i in km]
 
 # With the compiled rollout a 400-episode score costs ~0.1-0.2 s, so btind's budgets can be
 # near its defaults. Stages that need btind's own traces or kernels (exploration, memory,
 # termination, steps, subtrees) stay off. z = 2: a move must beat the incumbent by two
 # standard errors on paired episodes, and lose significantly in no market regime. Gains are
 # in percentage points of real certainty-equivalent return per year.
-CFG = dict(n_ep=400, T=252, z=2.0, min_gain=0.1, grow_min_gain=0.2,
+# SCREEN CHEAP, CONFIRM FULL: candidates are ranked, and laws tuned by CEM, on fewer
+# episodes (screen_ep, cem_ep); every move is still ACCEPTED on n_ep with the paired test.
+CFG = dict(n_ep=400, screen_ep=100, cem_ep=150, T=252, z=2.0, min_gain=0.1, grow_min_gain=0.2,
            grow_pool=60, grow_arms=4, cem_top=6, n_pos=2, max_arity=2, min_n=300,
            cem_iter=8, cem_K=48, cem_sigma=0.35, n_cover=6000, cover_ep=80,
            explore_ep=0, value_laws=False, mem_at=999, beta_at=999, steps_at=999,
            subtree_at=(), kern_at=(), val_ep=1000, val_seed=90210)
+
+
+MAX_WEIGHT = 1 / 3            # no stock above a third of the invested money: at least 3 names
 
 
 def world(panel, F, M, sn, mn, start, end, T=252, agent="stocks", gamma=None):
@@ -86,7 +103,8 @@ def world(panel, F, M, sn, mn, start, end, T=252, agent="stocks", gamma=None):
     # the source is part of the world's signature in btind's store: trees grown on another
     # universe or feature set are never reused
     return PortfolioWorld(panel, F, M, sn, mn, start, end, T=T, agent=agent, risk_aversion=gamma,
-                          source="yfinance-sp500top100+ndx20+edgar")
+                          fractional=True, max_weight=MAX_WEIGHT,
+                          source="yfinance-sp500top100+ndx20+edgar-nomean")
 
 
 def rule(names, n_act, column, threshold, above, action, default):
@@ -264,7 +282,10 @@ def main(rounds=3, fresh=False, seed=None):
     env._store_root = RUN_DIR
     state = _open_run(env, rounds, fresh)
     # every accepted tree is replayed on fixed training episodes (training_budget.png)
-    rec = env._recorder = Recorder(env, RUN_DIR, os.path.join(OUT, "training_budget.png"))
+    # every adopted tree is also replayed on the validation years (2020-2021), for the plot
+    # only: nothing in the search reads them
+    val_env = world(panel, F, M, sn, mn, "2020-01-01", VAL_END, gamma=env.risk_aversion)
+    rec = env._recorder = Recorder(env, RUN_DIR, os.path.join(OUT, "training_budget.png"), val_env=val_env)
     t0 = time.time()
     banks = {"stocks": None, "exposure": None}
     seed_bank = None
@@ -342,7 +363,8 @@ def write_report(env, panel, F, M, sn, mn, stock_bank, exp_bank, summary):
              "membership, stocks_data.py). Stocks delisted before today mostly have no yfinance "
              "prices and cannot be traded, a remaining upward bias of roughly +0.7 to +3 %/yr for an "
              "equal-weight portfolio of the S&P part, which the 'buy all' baselines share; "
-             f"decisions at the open every {env.decide_every} trading days; long-only, whole shares, "
+             f"decisions at the open every {env.decide_every} trading days; long-only, "
+             f"{'fractional' if env.fractional else 'whole'} shares, "
              f"$100k, {env.cost_bps:g} bp per trade, cash at the T-bill rate. Both trees were grown on "
              f"{TRAIN_START[:4]}-{TRAIN_END[:4]} only; nothing below was used by the search.", ""] + summary
     lines += ["", "## Stock tree", "", "```", emit(stock_bank, env.stock_names), "```", "",

@@ -44,14 +44,18 @@ starts = env.sample_starts(40, rng)
 worst = 0.0
 env.rollout(env.default_bank("stocks"), env.default_bank("exposure"), starts[:2], env.T)   # compile
 t_ref = t_ker = 0.0
-for trial in range(6):
+SETTINGS = [(False, 1.0), (True, 1.0), (True, 1 / 3), (False, 1 / 3)]   # (fractional, max_weight)
+for trial in range(2 * len(SETTINGS)):
     env.objective = ("cer", "sharpe")[trial % 2]         # both scores, same trades
+    env.fractional, env.max_weight = SETTINGS[trial // 2]
     sb = random_bank(env, env.stock_names, 3, rng)
     eb = random_bank(env, env.exposure_names, 4, rng)
     t = time.perf_counter(); ref = env.run(sb, eb, starts, env.T)["G"]; t_ref += time.perf_counter() - t
     t = time.perf_counter(); ker = env.rollout(sb, eb, starts, env.T)["G"]; t_ker += time.perf_counter() - t
     diff = np.abs(ref - ker)
     worst = max(worst, diff.max())
-    print(f"trial {trial} ({env.objective}): mean G reference {ref.mean():+.4f} kernel {ker.mean():+.4f}  "
+    print(f"trial {trial} ({env.objective}, {'fractional' if env.fractional else 'whole'} shares, "
+          f"cap {env.max_weight:.2f}): mean G reference {ref.mean():+.4f} kernel {ker.mean():+.4f}  "
           f"max |diff| {diff.max():.2e}  episodes differing > 1e-9: {(diff > 1e-9).sum()}/{len(diff)}")
-print(f"worst difference {worst:.2e}; time per 40-episode score: reference {t_ref / 6:.2f}s, kernel {t_ker / 6:.3f}s")
+print(f"worst difference {worst:.2e}; time per 40-episode score: reference {t_ref / (2 * len(SETTINGS)):.2f}s, "
+      f"kernel {t_ker / (2 * len(SETTINGS)):.3f}s")

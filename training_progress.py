@@ -27,8 +27,10 @@ Saved to <run dir>/progress.npz and redrawn to <results dir>/training_budget.png
 time a new tree is adopted and at the end of every stage: each costs about a second, and
 adoptions are minutes apart. The windows overlap (200 one-year windows from 13 years),
 so they show how the result depends on the start date, not 200 independent years; and they
-are TRAINING windows, which the search has seen (the report's validation and test periods
-are the out-of-sample check).
+are TRAINING windows, which the search has seen. So each tree is ALSO replayed on one-year
+windows starting in 2020 (the validation years, never used by the search) and drawn beside
+its training point: a tree that pulls ahead in training and not there is fitting history.
+The test period (2022-2026) is never touched here.
 
 Run from the repository root, any time, also while training runs:
     python training_progress.py              draw once and summarise
@@ -45,14 +47,15 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(ROOT, "results", "portfolio_bt")
 N_EP, SEED = 200, 4242
 KEYS = ("final", "rel", "rel_mean", "rel_p25", "rel_p75", "rel_p10", "rel_p90", "rel_best",
-        "rel_worst", "stage", "agent_is_stocks", "wall")
+        "rel_worst", "val_rel", "stage", "agent_is_stocks", "wall")
 
 
 class Recorder:
     """Replays each adopted tree pair on fixed training windows; appends to progress.npz."""
 
-    def __init__(self, env, run_dir, out_png, n_ep=N_EP, seed=SEED):
-        self.env, self.out_png = env, out_png
+    def __init__(self, env, run_dir, out_png, n_ep=N_EP, seed=SEED, val_env=None):
+        self.env, self.out_png, self.val_env = env, out_png, val_env
+        self.val_starts = val_env._starts[::2] if val_env is not None else None
         self.path = os.path.join(run_dir, "progress.npz")
         self.starts = env.sample_starts(n_ep, np.random.default_rng(seed))
         self.rows = {k: [] for k in KEYS}
@@ -71,10 +74,16 @@ class Recorder:
             self.spx = env.budget * np.cumprod(1.0 + out["bench"], axis=1)
         R = 100.0 * (V / self.spx - 1.0)                                  # % ahead of the S&P 500
         end = R[:, -1]
+        val = np.full(1, np.nan)
+        if self.val_env is not None:
+            ve = self.val_env
+            ve.agent, ve.partner = env.agent, env.partner
+            o = ve.rollout(stock_bank, exposure_bank, self.val_starts, ve.T, daily=True)
+            val = 100.0 * (np.prod(1.0 + o["daily"], 1) / np.prod(1.0 + o["bench"], 1) - 1.0)
         for k, v in (("final", V[:, -1]), ("rel", end), ("rel_mean", R.mean(0)),
                      ("rel_p25", np.quantile(R, 0.25, axis=0)), ("rel_p75", np.quantile(R, 0.75, axis=0)),
                      ("rel_p10", np.quantile(R, 0.1, axis=0)), ("rel_p90", np.quantile(R, 0.9, axis=0)),
-                     ("rel_best", R[np.argmax(end)]), ("rel_worst", R[np.argmin(end)]),
+                     ("rel_best", R[np.argmax(end)]), ("rel_worst", R[np.argmin(end)]), ("val_rel", val),
                      ("stage", self.stage), ("agent_is_stocks", env.agent == "stocks"), ("wall", time.time())):
             self.rows[k].append(v)
         np.savez(self.path + ".tmp.npz", starts=self.starts, spx=self.spx, dates=env._dates[self.starts],
@@ -149,10 +158,20 @@ def render(fig, z):
         c = cmap(k)
         ax.vlines(k, q25[k], q75[k], color=c, lw=9, alpha=0.55, zorder=2)
         ax.plot(k, rel[k].mean(), "o", color=c, ms=8, mec="black", mew=0.7, zorder=3)
+    vr = z["val_rel"] if "val_rel" in z else None
+    has_val = vr is not None and np.isfinite(vr).any()
+    if has_val:
+        v25, v75 = np.nanquantile(vr, 0.25, axis=1), np.nanquantile(vr, 0.75, axis=1)
+        ax.plot(x + 0.28, np.nanmean(vr, 1), color="grey", lw=1.0, ls=":", zorder=1)
+        for k in range(K):
+            ax.vlines(k + 0.28, v25[k], v75[k], color=cmap(k), lw=2.5, alpha=0.9, zorder=2)
+            ax.plot(k + 0.28, np.nanmean(vr[k]), "D", color="white", ms=7, mec=cmap(k), mew=2.0, zorder=3)
     ax.axhline(0, color="black", lw=1.4)
     x_right = max(K - 0.5, 5.5)
-    ax.text(0.995, 0.97, f"latest tree #{K - 1}: mean {rel[-1].mean():+.1f}%, median {np.median(rel[-1]):+.1f}%, "
-                         f"ahead of the S&P 500 in {100 * np.mean(rel[-1] > 0):.0f}% of windows",
+    vtxt = (f"\nvalidation 2020-21: mean {np.nanmean(vr[-1]):+.1f}%, median {np.nanmedian(vr[-1]):+.1f}%, "
+            f"ahead in {100 * np.nanmean(vr[-1] > 0):.0f}%" if has_val else "")
+    ax.text(0.995, 0.97, f"latest tree #{K - 1}, training: mean {rel[-1].mean():+.1f}%, median {np.median(rel[-1]):+.1f}%, "
+                         f"ahead of the S&P 500 in {100 * np.mean(rel[-1] > 0):.0f}% of windows" + vtxt,
             transform=ax.transAxes, fontsize=9, va="top", ha="right",
             bbox=dict(boxstyle="round", fc="white", ec=cmap(K - 1), lw=1.5))
     for s in np.unique(stage):
@@ -163,14 +182,19 @@ def render(fig, z):
         ax.text(k0, 1.01, f" stage {s}: {agent}", transform=ax.get_xaxis_transform(), fontsize=9, va="bottom")
     ax.set_xlim(-0.5, x_right)
     y0, y1 = min(q25.min(), rel.mean(1).min(), 0.0), max(q75.max(), rel.mean(1).max(), 0.0)
+    if has_val:
+        y0, y1 = min(y0, np.nanmin(v25)), max(y1, np.nanmax(v75))
     ax.set_ylim(y0 - 0.05 * (y1 - y0), y1 + 0.30 * (y1 - y0))      # headroom for the legend
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax.yaxis.set_major_locator(MaxNLocator(steps=[1, 2, 5, 10]))
     ax.yaxis.set_major_formatter(pct)
     ax.set_xlabel("tree # (every tree the search adopted, in order)")
     ax.set_ylabel("ahead of the S&P 500 after\none year (0 = matched it)")
-    ax.legend(handles=[Line2D([], [], marker="o", ls="", color="grey", mec="black", ms=8, label="mean"),
-                       Line2D([], [], color="grey", lw=9, alpha=0.55, label="25th to 75th percentile of windows")],
+    ax.legend(handles=[Line2D([], [], marker="o", ls="", color="grey", mec="black", ms=8, label="training: mean"),
+                       Line2D([], [], color="grey", lw=9, alpha=0.55, label="training: 25th-75th percentile"),
+                       Line2D([], [], marker="D", ls="", color="white", mec="grey", mew=2, ms=7,
+                              label="validation 2020-21 (never trained on): mean"),
+                       Line2D([], [], color="grey", lw=2.5, label="validation: 25th-75th")][:4 if has_val else 2],
               loc="upper left", fontsize=8, ncol=2)
     years = z["dates"].astype("datetime64[Y]").astype(int) + 1970
     ax.set_title(f"Portfolio vs the S&P 500 (SPY, dividends reinvested) on the same {E} one-year training "
@@ -209,8 +233,11 @@ def _line(z, k):
     r = z["rel"][k]
     agent = "stocks  " if z["agent_is_stocks"][k] else "exposure"
     q25, q50, q75 = np.quantile(r, [0.25, 0.5, 0.75])
-    return (f"  tree #{k:<4} stage {z['stage'][k]} {agent}  vs S&P 500: mean {r.mean():+6.1f}%   "
-            f"p25 {q25:+6.1f}%   median {q50:+6.1f}%   p75 {q75:+6.1f}%   ahead in {100 * np.mean(r > 0):3.0f}%")
+    v = z["val_rel"][k] if "val_rel" in z else np.full(1, np.nan)
+    vtxt = (f"  | validation 2020-21: mean {np.nanmean(v):+6.1f}%  median {np.nanmedian(v):+6.1f}%"
+            if np.isfinite(v).any() else "")
+    return (f"  tree #{k:<4} stage {z['stage'][k]} {agent}  training vs S&P 500: mean {r.mean():+6.1f}%   "
+            f"p25 {q25:+6.1f}%   median {q50:+6.1f}%   p75 {q75:+6.1f}%   ahead in {100 * np.mean(r > 0):3.0f}%" + vtxt)
 
 
 def _summary(path):

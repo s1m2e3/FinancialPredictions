@@ -215,13 +215,20 @@ reinvested) on risk-adjusted **real** return.
   partner: a **stock tree**, one row per stock, choosing exit / hold / buy at the open
   every 5 trading days; and an **exposure tree**, one row per portfolio, choosing how much
   is invested (25-100%, the rest in T-bills). Buys share the invested budget by inverse
-  volatility; long-only, whole shares, $100k, 5 bp per trade.
+  volatility, no stock above a third of it (at least three names, or the rest waits in
+  cash); long-only, fractional shares ($1 minimum position), $100k, 5 bp per trade. The
+  trees see the models' risk forecasts (volatility, 5% quantile) but not their mean or
+  direction forecasts, which have no skill and drift with every refit, so the search used
+  them to tell the years apart.
 - **Score**: certainty-equivalent real return, portfolio minus the S&P 500 (SPY with
   dividends reinvested, priced like the stocks), % per year: every return deflated by
   CPI-U (BLS), so idle cash loses what inflation takes, and variance charged at the risk
   aversion that made 100% S&P optimal on the training period.
 - **Search** (`portfolio_bt.py`): btind's pure-RL loop on one-year episodes from 2006-2019,
-  every move accepted only by a paired rollout test (z = 2) that no market regime may lose;
+  every move accepted only by a paired rollout test (z = 2) that it may not lose over any of
+  2006-09, 2010-14 or 2015-19 (a rule that pays in one era only is fitting history);
+  screening and law tuning run on fewer episodes, acceptance on all of them. Every adopted
+  tree is also replayed on the validation years for the training plot, never for the search;
   then a continuous run over the validation (2020-2021) and test (2022-2026) periods
   against the S&P 500 and simple strategies through the same simulator, with a
   block-bootstrap p-value on the gap. Checkpointed; rerunning the command resumes.
