@@ -130,6 +130,7 @@ regression    w_t = c + beta' x_t + delta sigma_t + u_t              (delta: GAR
 SARMA errors  phi(B) Phi(B^s) u_t = theta(B) Theta(B^s) eps_t
 variance      sigma_t^2 = omega + (alpha + gamma 1[eps_{t-1} < 0]) eps_{t-1}^2 + b sigma_{t-1}^2
 innovations   eps_t = sigma_t z_t,  z_t ~ normal, Student-t or Hansen skewed-t
+              or  sigma_t z_t + sum_{k<=N_t} Y_k - lambda_J mu_J,  N_t ~ Poisson(lambda_J), Y_k ~ N(mu_J, sigma_J^2)
 ```
 
 **1. Identification** (`identification.py`, training window only, Box–Jenkins):
@@ -137,14 +138,22 @@ unit-root tests (ADF, Phillips–Perron, KPSS) for d; OCSB, Canova–Hansen and 
 seasonal strength for D at seasons of 5, 21, 63 and 252 days; seasonal Ljung–Box
 (classic and heteroskedasticity-robust) and a periodogram with Fisher's g test;
 calendar regressors (day of week, month, turn of month) and lagged constituent
-returns tested with HAC standard errors; then an AICc search over 400
-SARIMA(p,d,q)(P,D,Q)[s] models on a common sample, and residual diagnostics.
+returns tested with HAC standard errors; then an AICc search over 900
+SARIMA(p,d,q)(P,D,Q)[s] models (p, q <= 5, P, Q <= 2) on a common sample, and
+residual diagnostics.
 The chosen specification is written to `results/identification/spec.json`.
 
-**2. Comparison** (`run_armagarch.py`): six models share that mean equation, each
-adding one thing: `sarimax` (constant variance, normal) → `sarimax_t` (fat tails)
-→ `two_step` (GJR-GARCH-t fitted on the SARIMAX residuals) → `joint` (estimated
-together) → `joint_skewt` (skewed-t) → `full` (GARCH-in-mean).
+**2. Comparison** (`run_armagarch.py`): seven models share that mean equation. Six
+form a ladder, each adding one thing: `sarimax` (constant variance, normal) →
+`sarimax_t` (fat tails) → `two_step` (GJR-GARCH-t fitted on the SARIMAX residuals)
+→ `joint` (estimated together) → `joint_skewt` (skewed-t) → `full` (GARCH-in-mean).
+The seventh, `jump`, swaps the fat-tailed errors for a normal diffusion plus
+Poisson jumps whose size does not scale with the GARCH volatility.
+
+**3. Mean reversion** (`run_ou.py`): the OU-with-jumps SDE on the log price, which
+sampled daily is an AR(1) in levels, with a constant or a linear-trend target and
+with or without the GARCH variance, scored against the SARIMAX models on the same
+test days.
 
 The split is chronological: train 2013–2020, validation 2021–2022, test 2023–2025.
 The test window is walk-forward: every 63 trading days every model is refitted on
@@ -161,18 +170,83 @@ python identification.py                     # Box-Jenkins; writes the spec (~15
 python run_armagarch.py                      # six-model comparison, AICc order (~11 min)
 python run_armagarch.py --criterion BIC      # same with the BIC order
 python compare_specs.py                      # AICc order vs BIC order, head to head
+python run_ou.py                             # OU-with-jumps models vs the SARIMAX run
+python plot_paths.py                         # simulated price paths vs the real index
 python checks/verify_against_libraries.py    # estimator and simulator checks
 ```
 
 | file | role |
 |---|---|
 | `data.py` | download (cached to `data/prices.csv`), log prices, candidate regressors, split dates |
-| `armagarch.py` | model, numba filter and path simulator, L-BFGS fit, the six arms, walk-forward |
+| `armagarch.py` | model, numba filter and path simulator, L-BFGS fit, the seven arms, walk-forward |
 | `identification.py` | Box–Jenkins identification; `results/identification/` |
 | `evaluation.py` | log score, CRPS, coverage, VaR backtests, Ljung–Box, Diebold–Mariano |
-| `run_armagarch.py` | the comparison; `results/sarimax_garch_<criterion>/metrics.md`, seven figures, `scores.npz` |
+| `run_armagarch.py` | the comparison; `results/sarimax_garch_<criterion>/metrics.md`, figures, `scores.npz` |
 | `compare_specs.py` | Diebold–Mariano tests of the AICc vs BIC orders; `results/spec_comparison/` |
+| `run_ou.py` | OU-with-jumps (mean reversion in the level) vs SARIMAX + GARCH; `results/ou/` |
+| `plot_paths.py` | simulated one-month price paths from the walk-forward models vs the real index |
 | `checks/verify_against_libraries.py` | vs statsmodels SARIMAX, arch GARCH and skewed-t, closed-form forecasts |
+
+## Stock portfolio with behaviour trees (in progress)
+
+A stock portfolio run by two behaviour trees **discovered** with
+[btind](https://github.com/s1m2e3/btind), judged against the S&P 500 (dividends
+reinvested) on risk-adjusted **real** return.
+
+- **Universe** (`stocks_data.py`), point-in-time, so the backtest never trades a company
+  it could not have known about: each month the 100 largest S&P 500 members of that day
+  plus the 20 largest Nasdaq-100 members *outside* the S&P 500 (the growth names the S&P
+  admits late: Tesla 2013-2020, Mercado Libre, ASML, PDD ...), sized by trailing dollar
+  volume. Membership from the S&P 500's change history
+  ([fja05680/sp500](https://github.com/fja05680/sp500)) and the Nasdaq-100 Wikipedia
+  article's revision history, one snapshot a quarter; renamed symbols are mapped to the
+  company's current one, symbols now held by another company are dropped.
+- **Information layer**: the statistical models are the inputs. `stock_features.py` gives
+  every stock a walk-forward AR(1)-GJR-GARCH with skewed-t errors and its 1, 3, 5, 10 and
+  21-day mean, volatility, 5% quantile and P(up) in closed form; the S&P 500 goes through
+  the full model (SARIMA + GJR-GARCH-in-mean, skewed-t) with those horizons simulated;
+  plus the overnight gap, momentum, reversal, beta, realised volatility, their
+  cross-sectional ranks, VIX, trend and index membership. `fundamentals.py` adds SEC
+  EDGAR XBRL fundamentals as first filed (never restated): EBTDA / assets, margin, 3-year
+  record and change ranked within sector, and revenue growth, including foreign filers
+  (IFRS, non-USD). Each row uses information up to the previous close plus that day's open.
+- **Two trees** (`portfolio_env.py`), trained in alternation as each other's fixed
+  partner: a **stock tree**, one row per stock, choosing exit / hold / buy at the open
+  every 5 trading days; and an **exposure tree**, one row per portfolio, choosing how much
+  is invested (25-100%, the rest in T-bills). Buys share the invested budget by inverse
+  volatility; long-only, whole shares, $100k, 5 bp per trade.
+- **Score**: certainty-equivalent real return, portfolio minus the S&P 500 (SPY with
+  dividends reinvested, priced like the stocks), % per year: every return deflated by
+  CPI-U (BLS), so idle cash loses what inflation takes, and variance charged at the risk
+  aversion that made 100% S&P optimal on the training period.
+- **Search** (`portfolio_bt.py`): btind's pure-RL loop on one-year episodes from 2006-2019,
+  every move accepted only by a paired rollout test (z = 2) that no market regime may lose;
+  then a continuous run over the validation (2020-2021) and test (2022-2026) periods
+  against the S&P 500 and simple strategies through the same simulator, with a
+  block-bootstrap p-value on the gap. Checkpointed; rerunning the command resumes.
+- **Training curves** (`training_progress.py`): every tree the search adopts is replayed
+  on 200 fixed training windows and drawn as % ahead of the S&P 500 (mean and quartiles),
+  live with `--watch`.
+- **Speed**: the portfolio rollout is a numba kernel built on btind's own compiled
+  arbitration, held to 1e-12 agreement with the numpy reference by
+  `checks/verify_portfolio_kernel.py`.
+- btind is used from the `portfolio-env` branch of s1m2e3/btind (hooks for a world that
+  scores its own episodes, keeps its own store and watches the trees the search adopts),
+  cloned next to this repository.
+
+**Caveat:** yfinance has no prices for most delisted stocks, so companies acquired or
+bankrupt before today mostly cannot be traded. Measured against RSP (the equal-weight
+S&P 500) the priced members still carry +0.7 to +3 %/yr, and the outside pool a similar
+edge against QQEW; the "buy all" baselines carry the same edge, so the trees are judged
+against them. `stocks_data.load_crsp` (CRSP via WRDS, delisted stocks included) is the fix.
+
+```
+python stock_features.py                          # information layer
+SEC_USER_AGENT="Name email" python fundamentals.py  # EDGAR fundamentals (the SEC asks for a contact)
+python checks/verify_portfolio_kernel.py          # kernel vs reference
+python portfolio_bt.py 3                          # both trees, 4 stages x 3 rounds, then the report
+python training_progress.py --watch               # training curves, live
+```
 
 ## Context
 

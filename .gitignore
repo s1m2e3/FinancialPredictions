@@ -1,3 +1,9 @@
 # downloaded price cache, re-created on the first run
 data/
 __pycache__/
+# btind bank store and proposal weights for the portfolio world
+runs_bt/
+# a training run in progress: checkpoints, btind store, progress file (portfolio_bt.py)
+results/portfolio_bt/run*/
+*.tmp.png
+*.tmp.npz

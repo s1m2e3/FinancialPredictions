@@ -1,0 +1,342 @@
+ticker,sic,sector
+AAL,4512.0,Industrials
+AAPL,3571.0,Information Technology
+ABBV,2834.0,Health Care
+ABNB,7340.0,Consumer Discretionary
+ABT,2834.0,Health Care
+ACN,7389.0,Information Technology
+ADBE,7372.0,Information Technology
+ADI,3674.0,Information Technology
+ADM,2070.0,Consumer Staples
+ADP,7374.0,Information Technology
+ADSK,7372.0,Information Technology
+AIG,6331.0,Financials
+AKAM,7389.0,Information Technology
+ALAB,3674.0,Information Technology
+ALGN,3842.0,Health Care
+ALL,6331.0,Financials
+ALNY,2834.0,Health Care
+AMAT,3674.0,Information Technology
+AMD,3674.0,Information Technology
+AMGN,2836.0,Health Care
+AMT,6798.0,Real Estate
+AMZN,5961.0,Consumer Discretionary
+ANET,3576.0,Information Technology
+APA,1311.0,Energy
+APH,3678.0,Information Technology
+APO,6282.0,Financials
+APP,7370.0,Information Technology
+ARM,3674.0,Information Technology
+ASML,3559.0,Industrials
+ATI,3317.0,Materials
+AVGO,3674.0,Information Technology
+AXP,6199.0,Financials
+AZN,2834.0,Health Care
+AZO,5531.0,Consumer Discretionary
+BA,3721.0,Industrials
+BAC,6021.0,Financials
+BATRA,7900.0,Communication Services
+BAX,3841.0,Health Care
+BB,7372.0,Information Technology
+BBY,5731.0,Consumer Discretionary
+BDX,3841.0,Health Care
+BIDU,7370.0,Information Technology
+BIIB,2836.0,Health Care
+BKNG,4700.0,Consumer Discretionary
+BKR,3533.0,Industrials
+BLK,6211.0,Financials
+BMRN,2834.0,Health Care
+BMY,2834.0,Health Care
+BNY,6022.0,Financials
+BRK-B,6331.0,Financials
+BSX,3841.0,Health Care
+BX,6282.0,Financials
+C,6021.0,Financials
+CAR,7510.0,Industrials
+CAT,3531.0,Industrials
+CB,6331.0,Financials
+CCEP,2086.0,Consumer Staples
+CCL,4400.0,Consumer Discretionary
+CDNS,7372.0,Information Technology
+CEG,4911.0,Utilities
+CF,2870.0,Materials
+CHKP,7372.0,Information Technology
+CHRW,4731.0,Industrials
+CHTR,4841.0,Communication Services
+CI,6324.0,Health Care
+CIEN,3661.0,Information Technology
+CL,2844.0,Consumer Staples
+CLF,1000.0,Materials
+CMCSA,4841.0,Communication Services
+CME,6200.0,Financials
+CMG,5812.0,Consumer Discretionary
+CMI,3510.0,Industrials
+CNC,6324.0,Health Care
+CNX,1311.0,Energy
+COF,6021.0,Financials
+COHR,3827.0,Information Technology
+COIN,6199.0,Financials
+COP,2911.0,Energy
+COST,5331.0,Consumer Staples
+CRM,7372.0,Information Technology
+CRWD,7372.0,Information Technology
+CRWV,7372.0,Information Technology
+CSCO,3576.0,Information Technology
+CSGP,7389.0,Industrials
+CSX,4011.0,Industrials
+CTSH,7371.0,Information Technology
+CVNA,5500.0,Consumer Discretionary
+CVS,5912.0,Consumer Staples
+CVX,2911.0,Energy
+DAL,4512.0,Industrials
+DASH,7389.0,Consumer Discretionary
+DD,2821.0,Materials
+DDOG,7372.0,Information Technology
+DE,3523.0,Industrials
+DELL,3571.0,Information Technology
+DG,5331.0,Consumer Staples
+DHI,1531.0,Consumer Discretionary
+DHR,3823.0,Information Technology
+DIS,7990.0,Consumer Discretionary
+DLTR,5331.0,Consumer Staples
+DOCU,7372.0,Information Technology
+DUK,4931.0,Utilities
+DVN,1311.0,Energy
+DXCM,3841.0,Health Care
+EBAY,7389.0,Consumer Discretionary
+ECL,2840.0,Materials
+ELV,6324.0,Health Care
+EMR,3600.0,Industrials
+ENPH,3674.0,Information Technology
+EOG,1311.0,Energy
+EQIX,6798.0,Real Estate
+ERIC,3663.0,Information Technology
+ETN,3590.0,Industrials
+ETSY,7389.0,Consumer Discretionary
+EXPD,4731.0,Industrials
+EXPE,4700.0,Consumer Discretionary
+F,3711.0,Consumer Discretionary
+FAST,5200.0,Consumer Discretionary
+FCX,1000.0,Materials
+FDX,4513.0,Industrials
+FER,1600.0,Industrials
+FFIV,3576.0,Information Technology
+FIS,7389.0,Financials
+FISV,7389.0,Financials
+FLEX,3672.0,Information Technology
+FLR,1600.0,Industrials
+FMCC,6111.0,Financials
+FNMA,6111.0,Financials
+FOSL,3873.0,Industrials
+FSLR,3674.0,Information Technology
+FTV,3823.0,Information Technology
+GE,3600.0,Industrials
+GEN,7372.0,Information Technology
+GENZ,,Unknown
+GEV,3600.0,Industrials
+GFS,3674.0,Information Technology
+GILD,2836.0,Health Care
+GLW,3357.0,Materials
+GM,3711.0,Consumer Discretionary
+GNTX,3714.0,Consumer Discretionary
+GNW,6311.0,Financials
+GOOGL,7370.0,Communication Services
+GPN,7389.0,Financials
+GRMN,3812.0,Information Technology
+GS,6211.0,Financials
+HAL,1389.0,Energy
+HCA,8062.0,Health Care
+HD,5211.0,Consumer Discretionary
+HIG,6331.0,Financials
+HOG,3751.0,Consumer Discretionary
+HON,3724.0,Industrials
+HOOD,6211.0,Financials
+HPQ,3570.0,Information Technology
+HSIC,5047.0,Industrials
+HUM,6324.0,Health Care
+IBM,3570.0,Information Technology
+ICE,6200.0,Financials
+ILMN,3826.0,Information Technology
+INCY,8731.0,Health Care
+INFY,7371.0,Information Technology
+INTC,3674.0,Information Technology
+INTU,7372.0,Information Technology
+ISRG,3842.0,Health Care
+JBHT,4213.0,Industrials
+JCI,3585.0,Industrials
+JD,5990.0,Consumer Discretionary
+JNJ,2834.0,Health Care
+JPM,6021.0,Financials
+KBH,1531.0,Consumer Discretionary
+KDP,2080.0,Consumer Staples
+KHC,2030.0,Consumer Staples
+KKR,6282.0,Financials
+KLAC,3827.0,Information Technology
+KMI,4922.0,Energy
+KO,2080.0,Consumer Staples
+KR,5411.0,Consumer Staples
+KSS,5311.0,Consumer Discretionary
+KVUE,2844.0,Consumer Staples
+LAMR,6798.0,Real Estate
+LBTYA,4841.0,Communication Services
+LCID,3711.0,Consumer Discretionary
+LEN,1520.0,Consumer Discretionary
+LILA,4841.0,Communication Services
+LIN,2810.0,Materials
+LITE,3669.0,Information Technology
+LLY,2834.0,Health Care
+LMT,3760.0,Industrials
+LOGI,3577.0,Information Technology
+LOW,5211.0,Consumer Discretionary
+LRCX,3559.0,Information Technology
+LULU,2300.0,Consumer Discretionary
+LUV,4512.0,Industrials
+LYB,2860.0,Materials
+M,5311.0,Consumer Discretionary
+MA,7389.0,Financials
+MAR,7011.0,Consumer Discretionary
+MCD,5812.0,Consumer Discretionary
+MCHP,3674.0,Information Technology
+MCK,5122.0,Health Care
+MCO,7320.0,Financials
+MDB,7372.0,Information Technology
+MDLZ,2000.0,Consumer Staples
+MDT,3845.0,Health Care
+MELI,7389.0,Industrials
+MET,6311.0,Financials
+META,7370.0,Communication Services
+MMM,3841.0,Health Care
+MNST,2086.0,Consumer Staples
+MO,2111.0,Consumer Staples
+MOS,2870.0,Materials
+MPC,2911.0,Energy
+MPWR,3674.0,Information Technology
+MRK,2834.0,Health Care
+MRNA,2836.0,Health Care
+MRSH,6411.0,Financials
+MRVL,3674.0,Information Technology
+MS,6211.0,Financials
+MSFT,7372.0,Information Technology
+MSI,3663.0,Information Technology
+MSTR,6199.0,Financials
+MTCH,7370.0,Information Technology
+MU,3674.0,Information Technology
+NBIS,7370.0,Information Technology
+NBR,1381.0,Energy
+NCLH,4400.0,Consumer Discretionary
+NEE,4911.0,Utilities
+NEM,1040.0,Materials
+NFLX,7841.0,Communication Services
+NKE,3021.0,Consumer Discretionary
+NOC,3812.0,Information Technology
+NOV,3533.0,Industrials
+NOW,7372.0,Information Technology
+NSC,4011.0,Industrials
+NTAP,3572.0,Information Technology
+NTES,7372.0,Information Technology
+NUE,3312.0,Materials
+NVDA,3674.0,Information Technology
+NXPI,3674.0,Information Technology
+OKTA,7372.0,Information Technology
+ON,3674.0,Information Technology
+ORCL,7372.0,Information Technology
+ORLY,5531.0,Consumer Discretionary
+OXY,1311.0,Energy
+PANW,3577.0,Information Technology
+PCG,4931.0,Utilities
+PDD,7389.0,Industrials
+PEP,2080.0,Consumer Staples
+PFE,2834.0,Health Care
+PG,2840.0,Materials
+PHM,1531.0,Consumer Discretionary
+PLTR,7372.0,Information Technology
+PM,2111.0,Consumer Staples
+PNC,6021.0,Financials
+PPG,2851.0,Materials
+PRGO,2834.0,Health Care
+PSKY,4833.0,Communication Services
+PSX,2911.0,Energy
+PTEN,1381.0,Energy
+PTON,3949.0,Consumer Discretionary
+PYPL,7389.0,Financials
+QCOM,3663.0,Information Technology
+QGEN,2836.0,Health Care
+RCL,4400.0,Consumer Discretionary
+REGN,2834.0,Health Care
+RIG,1381.0,Energy
+RIVN,3711.0,Consumer Discretionary
+RKLB,3760.0,Industrials
+ROST,5651.0,Consumer Discretionary
+RRC,1311.0,Energy
+RTX,3724.0,Industrials
+RYAAY,4512.0,Industrials
+SANM,3672.0,Information Technology
+SBAC,6798.0,Real Estate
+SBUX,5810.0,Consumer Discretionary
+SCHW,6211.0,Financials
+SHOP,7372.0,Information Technology
+SIRI,4832.0,Communication Services
+SLB,1389.0,Energy
+SLM,6141.0,Financials
+SMCI,3571.0,Information Technology
+SNDK,3572.0,Information Technology
+SNPS,7372.0,Information Technology
+SPG,6798.0,Real Estate
+SPGI,7320.0,Financials
+STLD,3312.0,Materials
+STT,6022.0,Financials
+STX,3572.0,Information Technology
+STZ,2080.0,Consumer Staples
+SWKS,3674.0,Information Technology
+SYF,6199.0,Financials
+T,4813.0,Communication Services
+TCOM,7389.0,Industrials
+TEAM,7372.0,Information Technology
+TER,3825.0,Information Technology
+TEVA,2834.0,Health Care
+TGT,5331.0,Consumer Staples
+TJX,5651.0,Consumer Discretionary
+TMO,3829.0,Information Technology
+TMUS,4812.0,Communication Services
+TPR,3100.0,Consumer Discretionary
+TRI,2741.0,Communication Services
+TSCO,5200.0,Consumer Discretionary
+TSLA,3711.0,Consumer Discretionary
+TTD,7370.0,Information Technology
+TTWO,7372.0,Information Technology
+TXN,3674.0,Information Technology
+UAA,2300.0,Consumer Discretionary
+UAL,4512.0,Industrials
+UBER,7389.0,Consumer Discretionary
+ULTA,5990.0,Consumer Discretionary
+UNH,6324.0,Health Care
+UNP,4011.0,Industrials
+UPS,4210.0,Industrials
+URBN,5651.0,Consumer Discretionary
+USB,6021.0,Financials
+V,7389.0,Financials
+VEON,4812.0,Communication Services
+VIAV,3674.0,Information Technology
+VLO,2911.0,Energy
+VOD,4812.0,Communication Services
+VRSK,7374.0,Information Technology
+VRSN,7371.0,Information Technology
+VRT,3679.0,Information Technology
+VRTX,2834.0,Health Care
+VST,4911.0,Utilities
+VTRS,2834.0,Health Care
+VZ,4813.0,Communication Services
+WBD,4841.0,Communication Services
+WDAY,7374.0,Information Technology
+WDC,3572.0,Information Technology
+WFC,6021.0,Financials
+WMB,4922.0,Energy
+WMT,5331.0,Consumer Staples
+WYNN,7011.0,Consumer Discretionary
+XOM,2911.0,Energy
+XRAY,3843.0,Health Care
+YUM,5812.0,Consumer Discretionary
+ZBH,3842.0,Health Care
+ZM,7370.0,Information Technology
+ZS,7371.0,Information Technology
+ZTS,2834.0,Health Care

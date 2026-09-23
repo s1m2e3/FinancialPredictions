@@ -16,6 +16,18 @@ pmdarima==2.1.1
 # in checks/verify_against_libraries.py
 arch==8.0.0
 #
+# Portfolio experiment (stocks_data.py, fundamentals.py, portfolio_bt.py): requests for
+# the membership files, the Nasdaq-100 revision history, SEC EDGAR and the BLS CPI, and
+# btind's own dependencies. btind itself is not a package: clone the `portfolio-env`
+# branch of github.com/s1m2e3/btind next to this repository (or point BTIND_PATH at it);
+# portfolio_env.py puts it on sys.path.
+requests==2.34.2
+gymnasium==1.3.0
+networkx==3.6.1
+scikit-learn==1.9.1
+xgboost==3.2.0
+py_trees==2.6.0
+#
 # Not installed yet: the neural-network experiment (main.py, model.py) also needs
 # torch (CUDA build) and seaborn, and was written for the older yfinance / pandas
 # APIs described in the README.
