@@ -209,7 +209,8 @@ reinvested) on risk-adjusted **real** return.
   cross-sectional ranks, VIX, trend and index membership. `fundamentals.py` adds SEC
   EDGAR XBRL fundamentals as first filed (never restated): EBTDA / assets, margin, 3-year
   record and change ranked within sector, and revenue growth, including foreign filers
-  (IFRS, non-USD). Each row uses information up to the previous close plus that day's open.
+  (IFRS, non-USD); a missing value is a random rank, so the years before EDGAR's XBRL
+  (2006-2009) cannot act as a hidden date flag. Each row uses information up to the previous close plus that day's open.
 - **Two trees** (`portfolio_env.py`), trained in alternation as each other's fixed
   partner: a **stock tree**, one row per stock, choosing exit / hold / buy at the open
   every 5 trading days; and an **exposure tree**, one row per portfolio, choosing how much

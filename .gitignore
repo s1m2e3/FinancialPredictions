@@ -3,7 +3,8 @@ data/
 __pycache__/
 # btind bank store and proposal weights for the portfolio world
 runs_bt/
-# a training run in progress: checkpoints, btind store, progress file (portfolio_bt.py)
-results/portfolio_bt/run*/
+# trained trees stay private: run checkpoints, seed trees, training logs that print the
+# arms, the report and the tree files (portfolio_bt.py writes all of them here)
+results/portfolio_bt*/
 *.tmp.png
 *.tmp.npz

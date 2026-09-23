@@ -18,7 +18,7 @@ test on 2006-2019 episodes; 2020-2021 and 2022-2026 are never seen by the search
 ONE MODEL: the two trees see everything -- the walk-forward GARCH and price features, their
 cross-sectional ranks, the S&P 500 full-model forecasts, the EDGAR fundamentals
 (fundamentals.py: sector ranks of EBTDA / assets, margin, 3-year record and change, the
-universe rank of revenue growth, has_fund) and `in_sp500`, which tells the stock tree
+universe rank of revenue growth; random where missing) and `in_sp500`, which tells the tree
 whether a stock is an S&P 500 member or one of the Nasdaq-100 growth names outside it
 (stocks_data.py), so it can decide how much of the outside pool to hold.
 
@@ -43,7 +43,11 @@ CHECKPOINTS. Every finished stage and every round's best tree are saved under
 there (see main); --fresh archives the run and starts over; --report writes the report
 from the checkpoint without training.
 
-Run from the repository root:  python portfolio_bt.py [rounds per stage] [--fresh | --report]
+SEED. --seed tree.json starts stage 0 from that stock tree (btind's bank_json) instead of
+btind's cold start, e.g. arms an earlier run discovered; the search then continues from it
+and only accepts moves that beat it. A resumed stage 0 ignores it (its snapshot is newer).
+
+Run from the repository root:  python portfolio_bt.py [rounds per stage] [--seed tree.json] [--fresh | --report]
 """
 import json
 import os
@@ -250,7 +254,7 @@ def _stage_snapshot(env, agent, stage):
     return bank_from_json(e["bank"]), e["G"], len(entries)
 
 
-def main(rounds=3, fresh=False):
+def main(rounds=3, fresh=False, seed=None):
     from btind.runlog import bank_from_json, bank_json
     from training_progress import Recorder
     os.makedirs(OUT, exist_ok=True)
@@ -263,6 +267,10 @@ def main(rounds=3, fresh=False):
     rec = env._recorder = Recorder(env, RUN_DIR, os.path.join(OUT, "training_budget.png"))
     t0 = time.time()
     banks = {"stocks": None, "exposure": None}
+    seed_bank = None
+    if seed is not None:
+        with open(seed) as fh:
+            seed_bank = bank_from_json(json.load(fh))
     for s in state["stages"]:
         banks[s["agent"]] = bank_from_json(s["bank"])
         print(f"  stage {s['stage']} {s['agent']}: {s['arms']} arms, held-out G {s['held_out']:+.3f} (from checkpoint)",
@@ -272,6 +280,9 @@ def main(rounds=3, fresh=False):
         partner = banks["exposure" if agent == "stocks" else "stocks"]
         snap, snap_G, done = _stage_snapshot(env, agent, stage)
         init = snap if snap is not None else banks[agent]        # None the first time
+        if init is None and stage == 0 and seed_bank is not None:
+            init = seed_bank
+            print(f"  starting from the seed tree {seed} ({len(seed_bank['clauses'])} arms)", flush=True)
         left = max(rounds - done, 0)
         # each (re)start of a stage gets its own tag, so its round snapshots never collide
         attempt = state.setdefault("attempts", {}).get(str(stage), 0) + 1
@@ -366,4 +377,6 @@ if __name__ == "__main__":
         report_from_checkpoint()
     else:
         # restarting the same command resumes; --fresh archives the current run and starts over
-        main(int(args[0]) if args else 3, fresh="--fresh" in sys.argv)
+        seed = sys.argv[sys.argv.index("--seed") + 1] if "--seed" in sys.argv else None
+        args = [a for a in args if a != seed]
+        main(int(args[0]) if args else 3, fresh="--fresh" in sys.argv, seed=seed)

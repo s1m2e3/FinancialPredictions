@@ -31,9 +31,15 @@ each turned into a percentile rank WITHIN THE STOCK'S SECTOR among the stocks th
 that day (a bank's EBTDA / assets is not comparable with a software company's), falling
 back to the whole universe when fewer than MIN_PEERS sector peers have the value; revenue
 growth is ranked across the whole universe instead, since a growth rate means the same in
-every sector and "the fastest growers" is the question it answers. Ranks are in (0, 1];
-PortfolioWorld maps NaN to 0, so "missing" sits below every real rank and `has_fund` (1
-when ebtda_roa is known) lets a tree tell the two apart.
+every sector and "the fastest growers" is the question it answers. Ranks are in (0, 1].
+
+MISSING VALUES ARE RANDOM RANKS, drawn once (MISSING_SEED), not 0 or a flag. EDGAR has
+nothing before 2010, so before then EVERY stock lacks fundamentals: a 0 (or a has-data
+flag) is a calendar in disguise, and the search used it -- "no fundamentals -> exit" sold
+everything through 2006-2009 and scored the 2008 crash as skill. A uniform draw has the
+same distribution as a real rank and says nothing, so a rule on fundamentals acts at
+random where there are none (before 2010, foreign filers without XBRL) and can only earn
+where they exist.
 
 FOREIGN FILERS (the Nasdaq-100 pool holds ASML, Baidu, JD, PDD, AstraZeneca ...): their
 20-F / 40-F reports are read under IFRS tags (ifrs-full) as well as US GAAP, in the
@@ -60,6 +66,7 @@ CACHE = os.path.join(ROOT, "data", "fundamentals.npz")
 STALE_DAYS = 200
 ANNUAL_STALE_DAYS = 420            # companies that file only annual reports (20-F filers)
 MIN_PEERS = 5
+MISSING_SEED = 2010
 # XBRL tags per concept in priority order: companies switch tags over the years (revenue
 # moved to RevenueFromContractWithCustomer... under ASC 606 in 2018), so every tag is read
 # and a period takes its value from the first tag that reports it
@@ -94,7 +101,7 @@ IFRS_TAGS = {
 EXTRA_CIKS = {"GOOGL": [1288776], "XOM": [34088]}
 RAW_NAMES = ["ebtda_roa", "ebtda_margin", "ebtda_roa_3y", "ebtda_roa_chg", "rev_growth"]
 BY_SECTOR = [True, True, True, True, False]
-FUND_NAMES = [f"rank_{n}" for n in RAW_NAMES] + ["has_fund"]
+FUND_NAMES = [f"rank_{n}" for n in RAW_NAMES]
 
 
 def _get(url):
@@ -304,8 +311,8 @@ def build(panel=None, refresh=False):
         os.replace(RAW + ".tmp", RAW)
     X = raw_panel(p, facts)
     R = sector_ranks(X, p.sectors, p.universe, BY_SECTOR)
-    has = (~np.isnan(X[:, :, 0])).astype(np.float64)[:, :, None]
-    Fd = np.concatenate([R, has], axis=2)
+    fill = np.random.default_rng(MISSING_SEED).uniform(0.0, 1.0, R.shape)
+    Fd = np.where(np.isnan(R), fill, R)                 # missing = uninformative, not a date flag
     np.savez_compressed(CACHE, F=Fd.astype(np.float32), raw=X.astype(np.float32),
                         names=np.array(FUND_NAMES), raw_names=np.array(RAW_NAMES),
                         tickers=np.array(p.tickers), dates=p.dates.values.astype("datetime64[D]"))
