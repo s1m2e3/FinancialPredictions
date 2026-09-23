@@ -99,3 +99,47 @@ exact = filt.mu[t] + np.sqrt(filt.s2[t]) * SkewStudent().ppf(levels, np.array([P
 print(f"\nsimulator vs exact one-day skewed-t quantiles (nu={P['nu']:.2f}, lambda={P['lam']:.3f})")
 for lv, e_, s_ in zip(levels, exact, np.quantile(sims, levels)):
     row(f"q{lv:.2f}", s_, e_)
+
+# 6. GARCH-jump: the Poisson-mixture density is a proper, centred density, and the
+#    simulator reproduces its exact one-day quantiles
+from scipy import integrate, optimize, stats                  # noqa: E402
+
+from armagarch import jump_mixture_loglik                     # noqa: E402
+
+f = fit(Spec(p=1, d=1, garch=True, jumps=True), w, np.zeros((d.n, 0)), n_tr)
+filt = f.filter(w, np.zeros((d.n, 0)))
+P = f.params
+s2t = filt.s2[t]
+dens = lambda x: np.exp(jump_mixture_loglik(np.atleast_1d(x), np.array([s2t]), P["lam_j"], P["mu_j"], P["sig_j"]))[0]
+mass = integrate.quad(dens, -60, 60, limit=400)[0]
+mean = integrate.quad(lambda x: x * dens(x), -60, 60, limit=400)[0]
+var = integrate.quad(lambda x: x * x * dens(x), -60, 60, limit=400)[0]
+print(f"\nGARCH-jump (lambda_J={P['lam_j']:.4f}/day, mu_J={P['mu_j']:.3f}, sigma_J={P['sig_j']:.3f})")
+row("mass", mass, 1.0)
+row("mean", mean, 0.0)
+row("variance", var, s2t + P["lam_j"] * (P["sig_j"] ** 2 + P["mu_j"] ** 2))
+n = np.arange(11)
+w_n = stats.poisson.pmf(n, P["lam_j"])
+cdf = lambda x: np.sum(w_n * stats.norm.cdf(x, (n - P["lam_j"]) * P["mu_j"], np.sqrt(s2t + n * P["sig_j"] ** 2)))
+sims = simulate(f, filt, d.y, np.zeros((d.n, 0)), np.zeros(0, bool), origin, [1], 400_000, 3)[0, :, 0]
+for lv, s_ in zip(levels, np.quantile(sims, levels)):
+    row(f"q{lv:.2f}", s_, filt.mu[t] + optimize.brentq(lambda x: cdf(x) - lv, -60, 60))
+
+# 7. Exact gradient (gradients.py) vs central finite differences, every model type
+from armagarch import ARMS, arm_spec, filter_series, initial_params                  # noqa: E402
+from gradients import theta_jacobian, theta_jacobian_complex_step, value_and_grad    # noqa: E402
+
+rng = np.random.default_rng(0)
+cases = [(f"{a}", arm_spec(a, Spec(p=2, d=1, q=2, Q=1, s=5)), w, np.zeros((d.n, 0))) for a in ARMS]
+cases += [("seasonal + regressor, GARCH-M skew-t", Spec(p=1, d=1, q=1, P=1, Q=1, s=21, k=1, garch=True,
+                                                         dist="skewt", in_mean=True), w, X),
+          ("OU level + trend, GARCH + jumps", Spec(p=1, d=0, k=1, garch=True, jumps=True), d.y.copy(),
+           (np.arange(d.n) / 252.0)[:, None])]
+print("\nexact gradient vs central differences (max relative error), Jacobian vs complex step")
+for name, spec, ww, XX in cases:
+    u = initial_params(spec, ww[spec.t0:n_tr]) + 0.3 * rng.standard_normal(spec.n_params)
+    _, g = value_and_grad(u, spec, ww, XX, spec.t0, n_tr)
+    f0 = lambda v: -filter_series(v, spec, ww, XX, spec.t0).ll[spec.t0:n_tr].mean()
+    gf = np.array([(f0(u + 1e-6 * e) - f0(u - 1e-6 * e)) / 2e-6 for e in np.eye(len(u))])
+    jac = np.max(np.abs(theta_jacobian(u, spec) - theta_jacobian_complex_step(u, spec)))
+    print(f"  {name:<40} gradient {np.max(np.abs(g - gf)) / np.max(np.abs(gf)):.1e}   Jacobian {jac:.1e}")

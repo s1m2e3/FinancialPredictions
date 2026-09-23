@@ -10,6 +10,8 @@ thing to the one before:
   joint        SARIMAX + GJR-GARCH-t estimated together (coupling)
   joint_skewt  + skewed-t innovations
   full         + GARCH-in-mean
+and one alternative tail model, compared with the joint and full arms:
+  jump         SARIMAX + GJR-GARCH with a normal diffusion plus Poisson jumps
 
 Protocol (chronological, nothing shuffled):
   1. Fit all arms on train (2013-2020); loss curves record the training NLL and, with
@@ -63,17 +65,24 @@ LABEL = {
     "joint": "SARIMAX + GARCH-t (joint)",
     "joint_skewt": "SARIMAX + GARCH, skewed-t (joint)",
     "full": "SARIMAX + GARCH-in-mean, skewed-t (joint)",
+    "jump": "SARIMAX + GARCH, normal + Poisson jumps (joint)",
 }
 SHORT = {"sarimax": "SARIMAX", "sarimax_t": "SARIMAX-t", "two_step": "Two-step",
-         "joint": "Joint", "joint_skewt": "Joint skew-t", "full": "Full (GARCH-M)"}
-STEP = {"sarimax_t": "fat tails", "two_step": "GARCH variance", "joint": "joint estimation",
-        "joint_skewt": "skewed errors", "full": "GARCH-in-mean"}
-LADDER = {"sarimax_t": "sarimax", "two_step": "sarimax_t", "joint": "two_step",
-          "joint_skewt": "joint", "full": "joint_skewt"}     # the rung each arm is compared with
+         "joint": "Joint", "joint_skewt": "Joint skew-t", "full": "Full (GARCH-M)", "jump": "GARCH-jump"}
+# (name, richer arm, arm it is compared with)
+STEPS = [("fat tails", "sarimax_t", "sarimax"),
+         ("GARCH variance", "two_step", "sarimax_t"),
+         ("joint estimation", "joint", "two_step"),
+         ("skewed errors", "joint_skewt", "joint"),
+         ("GARCH-in-mean", "full", "joint_skewt"),
+         ("jumps instead of t tails", "jump", "joint"),
+         ("jumps vs skew-t + GARCH-M", "jump", "full"),
+         ("total", "full", "sarimax"),
+         ("total, jump model", "jump", "sarimax")]
 
 # Categorical slots in fixed order; the full model takes slot 1.
 COLOR = {"full": "#2a78d6", "joint_skewt": "#eb6834", "joint": "#1baf7a", "two_step": "#eda100",
-         "sarimax_t": "#e87ba4", "sarimax": "#008300"}
+         "sarimax_t": "#e87ba4", "sarimax": "#008300", "jump": "#4a3aa7"}
 INK, INK_2, MUTED, GRID, AXIS, SURFACE = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7", "#fcfcfb"
 DIVERGING = LinearSegmentedColormap.from_list("div", ["#e34948", "#f0efec", "#2a78d6"])
 
@@ -110,7 +119,8 @@ def param_table(fits, regressors):
         row.update({f"Theta{i + 1}": v for i, v in enumerate(P["Theta"])})
         row.update({"delta (in-mean)": P["delta"], "sigma2 (uncond.)": P["sbar2"], "omega": P["omega"],
                     "alpha": P["alpha"], "gamma": P["gamma"], "b": P["b"],
-                    "persistence": P["persistence"], "nu": P["nu"], "lambda (skew)": P["lam"]})
+                    "persistence": P["persistence"], "nu": P["nu"], "lambda (skew)": P["lam"],
+                    "jumps per day": P["lam_j"], "mean jump": P["mu_j"], "jump s.d.": P["sig_j"]})
         rows[SHORT[a]] = row
     df = pd.DataFrame(rows)
     df.index.name = "parameter (train fit)"
@@ -164,6 +174,8 @@ def main():
                                       N_PATHS, summarize, warm=fits, seed=2026)
     print(f"walk-forward: {len(refits)} refits, {N_PATHS} paths per origin, {time.time() - t:.0f}s")
     summ = {a: ev.concat(multi[a]) for a in ARMS}
+    np.savez(os.path.join(OUT, "walk_forward_params.npz"), starts=np.array([s for s, _ in refits]),
+             label=base.label(), **{a: np.stack([f[a].u for _, f in refits]) for a in ARMS})   # for plot_paths.py
     np.savez(os.path.join(OUT, "scores.npz"), label=base.label(), horizons=list(HORIZONS),
              origins=summ["sarimax"]["origins"], test_start=n_va,
              **{f"crps_{a}": summ[a]["crps"] for a in ARMS},
@@ -183,7 +195,7 @@ def main():
         df.index.name = f"test, {HORIZONS[h]} ahead"
 
     # 3. what each step adds: log score (1 day, exact) and CRPS (every horizon) -----------
-    steps = [(STEP[a], a, LADDER[a]) for a in ARMS[1:]] + [("total", "full", "sarimax")]
+    steps = STEPS
     rows, crps_gain, crps_p = [], {}, {}
     for name, a, b in steps:
         g1, p1 = ev.diebold_mariano(one[a]["ll"][n_va:], one[b]["ll"][n_va:])
@@ -242,7 +254,9 @@ def save(fig, name):
 
 
 def plot_training_loss(fits, title):
-    fig, axes = plt.subplots(2, 3, figsize=(15, 8), sharey=True)
+    fig, axes = plt.subplots(2, 4, figsize=(19, 8), sharey=True)
+    for ax in axes.flat[len(ARMS):]:
+        ax.set_visible(False)
     for ax, a in zip(axes.flat, ARMS):
         h = fits[a].history
         for name, hr in h["runs"].items():
@@ -314,7 +328,7 @@ def plot_step_heatmap(gain, pval, steps, title):
     hs = list(HORIZONS)
     M = np.array([[gain[(n, h)] for h in hs] for n in names])
     lim = np.nanmax(np.abs(M))
-    fig, ax = plt.subplots(figsize=(10, 4.8))
+    fig, ax = plt.subplots(figsize=(11, 6.2))
     im = ax.imshow(M, cmap=DIVERGING, vmin=-lim, vmax=lim, aspect="auto")
     ax.grid(False)
     for i, n in enumerate(names):
@@ -331,9 +345,9 @@ def plot_step_heatmap(gain, pval, steps, title):
 
 
 def plot_fan(summ, dates, title):
-    fig, axes = plt.subplots(2, 2, figsize=(15, 8), sharex=True)
+    fig, axes = plt.subplots(3, 2, figsize=(15, 11.5), sharex=True)
     for col, (hi, h) in enumerate(((0, 1), (4, 21))):
-        for row, a in enumerate(("sarimax", "full")):
+        for row, a in enumerate(("sarimax", "full", "jump")):
             ax = axes[row, col]
             s = summ[a]
             dt = dates[s["origins"]]

@@ -1,0 +1,40 @@
+OU + jumps, constant target: 6s, train half-life 38,437,172 days
+OU + jumps, trend target: 6s, train half-life 953,939 days
+OU + GARCH + jumps, trend target: 6s, train half-life 319,753,849 days
+                                  OU + jumps, constant target  OU + jumps, trend target  OU + GARCH + jumps, trend target
+parameter (train fit, 2013-2020)                                                                                         
+phi                                              1.000000e+00                    1.0000                      1.000000e+00
+kappa per day                                    0.000000e+00                    0.0000                      0.000000e+00
+half-life (days)                                 3.843717e+07               953939.3053                      3.197538e+08
+target at start (level)                          5.878802e+03                 5872.3812                      5.876283e+03
+trend (% per year)                               0.000000e+00                   17.8319                      1.061700e+01
+diffusion variance                               4.344000e-01                    0.4323                      3.124000e-01
+GARCH persistence                                0.000000e+00                    0.0000                      9.285000e-01
+jumps per day                                    2.974000e-01                    0.2916                      1.619000e-01
+mean jump (%)                                   -5.648000e-01                   -0.4055                     -8.374000e-01
+jump s.d. (%)                                    1.758300e+00                    1.7418                      9.270000e-01
+train NLL / day                                  1.447900e+00                    1.4461                      1.315700e+00 
+
+                                                     1d log-score gain / day      p  CRPS 1 day (%)  p 1 day  CRPS 3 days (%)  p 3 days  CRPS 1 week (%)  p 1 week  CRPS 2 weeks (%)  p 2 weeks  CRPS 1 month (%)  p 1 month
+comparison                                                                                                                                                                                                                 
+OU + jumps, constant target vs SARIMAX                                0.081  0.093           2.587    0.000            0.770     0.207           -0.743     0.350            -3.374      0.020            -7.241      0.022
+OU + jumps, constant target vs Full (GARCH-M)                        -0.048  0.026          -1.283    0.077           -3.182     0.037           -4.857     0.017            -8.012      0.033           -13.558      0.071
+OU + jumps, constant target vs GARCH-jump                            -0.056  0.005          -1.336    0.096           -2.873     0.013           -4.305     0.001            -6.735      0.001           -11.279      0.004
+OU + jumps, trend target vs SARIMAX                                   0.083  0.081           2.779    0.000            1.544     0.009            0.927     0.112             0.186      0.787             0.107      0.936
+OU + jumps, trend target vs Full (GARCH-M)                           -0.045  0.037          -1.083    0.135           -2.377     0.077           -3.119     0.042            -4.292      0.096            -5.777      0.245
+OU + jumps, trend target vs GARCH-jump                               -0.054  0.008          -1.136    0.179           -2.070     0.064           -2.576     0.010            -3.059      0.004            -3.654      0.028
+OU + GARCH + jumps, trend target vs SARIMAX                           0.140  0.024           4.012    0.000            3.647     0.000            3.365     0.000             2.902      0.005             3.360      0.048
+OU + GARCH + jumps, trend target vs Full (GARCH-M)                    0.011  0.099           0.199    0.593           -0.190     0.816           -0.582     0.597            -1.454      0.455            -2.332      0.552
+OU + GARCH + jumps, trend target vs GARCH-jump                        0.003  0.529           0.146    0.708            0.110     0.860           -0.052     0.925            -0.254      0.387            -0.278      0.532 
+
+                                   1 day  3 days  1 week  2 weeks  1 month
+MSE of the predictive mean                                               
+SARIMAX                           1.683   4.738   7.205   13.298   25.257
+Full (GARCH-M)                    1.630   4.609   7.044   12.942   24.060
+GARCH-jump                        1.627   4.665   7.178   13.387   25.748
+OU + jumps, constant target       1.637   4.725   7.363   14.138   28.829
+OU + jumps, trend target          1.630   4.648   7.128   13.288   25.283
+OU + GARCH + jumps, trend target  1.632   4.671   7.201   13.493   26.074
+zero forecast                     1.637   4.726   7.358   14.128   28.776
+
+wrote C:\Users\samil\Documents\FinancialPredictions\results\ou

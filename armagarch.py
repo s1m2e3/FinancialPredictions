@@ -5,7 +5,8 @@ Notation: y_t = 100 * log P_t, B the backshift operator.
   differencing   w_t = (1 - B)^d (1 - B^s)^D y_t
   regression     w_t = c + beta' x_t + delta * sigma_t + u_t          (delta: GARCH-in-mean)
   SARMA errors   phi(B) Phi(B^s) u_t = theta(B) Theta(B^s) eps_t
-  innovations    eps_t = sigma_t z_t,  z_t iid with mean 0 and variance 1
+  innovations    eps_t = sigma_t z_t  [ + sum_{k=1}^{N_t} Y_k - lambda_J mu_J ]   (jumps)
+                 z_t iid with mean 0 and variance 1
   variance       sigma_t^2 = omega + (alpha + gamma 1[eps_{t-1} < 0]) eps_{t-1}^2 + b sigma_{t-1}^2
 
 The conditional mean of w_t is mu_t = c + beta' x_t + delta sigma_t + [SARMA part]. The
@@ -14,24 +15,33 @@ normal, standardised Student-t, or Hansen's (1994) standardised skewed-t with ta
 skew lambda in (-1, 1) (lambda < 0: longer left tail). With garch=False the variance is a
 constant sigma^2 and the model is a plain (S)ARIMAX.
 
+With jumps, a compound-Poisson term is added to a normal diffusion (the GARCH-jump model of
+Chan and Maheu, 2002): N_t ~ Poisson(lambda_J) jumps a day, each Y_k ~ N(mu_J, sigma_J^2),
+centred by lambda_J mu_J so that mu_t stays the conditional mean. Unlike the Student-t and
+skewed-t tails, the jump size does not scale with sigma_t: calm periods keep their crash
+risk. The one-day density is a Poisson mixture of normals, exact up to N_MAX_JUMPS jumps a
+day; the variance recursion runs on the total surprise eps_t, so jumps also raise sigma_t.
+
 Mean and variance are coupled three ways: the variance recursion runs on the mean model's
 residuals eps_t; the likelihood divides each squared residual by sigma_t^2; and with
 in_mean the variance enters the mean directly.
 
 Parameters are optimised unconstrained. The transforms keep the AR and seasonal-AR
 polynomials stationary, the MA and seasonal-MA polynomials invertible, omega, alpha,
-gamma, b > 0 with alpha + gamma/2 + b < 1, nu > 2.05 and |lambda| < 1.
+gamma, b > 0 with alpha + gamma/2 + b < 1, nu > 2.05, |lambda| < 1, 0 < lambda_J < 1 per
+day and sigma_J > 0.
 """
 from dataclasses import dataclass, field
 
 import numpy as np
 from numba import njit
 from scipy.optimize import minimize
-from scipy.special import expit, gammaln, logit
+from scipy.special import expit, gammaln, logit, logsumexp
 
 LOG_2PI = np.log(2 * np.pi)
 MAX_PERSISTENCE = 0.999
 DIST_CODE = {"normal": 0, "t": 1, "skewt": 2}
+N_MAX_JUMPS = 10               # Poisson mixture truncation; P(N > 10) < 1e-8 for lambda_J <= 1
 
 
 @dataclass(frozen=True)
@@ -47,12 +57,15 @@ class Spec:
     garch: bool = False      # False: constant variance
     dist: str = "normal"     # "normal", "t" or "skewt"
     in_mean: bool = False    # GARCH-in-mean term delta * sigma_t
+    jumps: bool = False      # compound-Poisson jumps on top of a normal diffusion
 
     def __post_init__(self):
         if (self.P or self.Q or self.D) and self.s < 2:
             raise ValueError("seasonal terms need a season length s >= 2")
         if self.in_mean and not self.garch:
             raise ValueError("in_mean needs a GARCH variance")
+        if self.jumps and self.dist != "normal":
+            raise ValueError("jumps have a closed-form likelihood only with a normal diffusion")
 
     @property
     def n_diff(self):
@@ -76,7 +89,8 @@ class Spec:
         return [("c", 1), ("beta", self.k), ("delta", int(self.in_mean)),
                 ("ar", self.p), ("sar", self.P), ("ma", self.q), ("sma", self.Q),
                 ("logvar", 1), ("garch", 3 if self.garch else 0),
-                ("nu", int(self.dist in ("t", "skewt"))), ("skew", int(self.dist == "skewt"))]
+                ("nu", int(self.dist in ("t", "skewt"))), ("skew", int(self.dist == "skewt")),
+                ("jump", 3 if self.jumps else 0)]
 
     def slices(self):
         out, i = {}, 0
@@ -182,12 +196,17 @@ def unpack(u, spec):
 
     nu = 2.05 + np.exp(u[sl["nu"]][0]) if spec.dist in ("t", "skewt") else np.inf
     lam = np.tanh(u[sl["skew"]][0]) if spec.dist == "skewt" else 0.0
+    if spec.jumps:
+        j = u[sl["jump"]]
+        lam_j, mu_j, sig_j = expit(j[0]), j[1], np.exp(j[2])
+    else:
+        lam_j, mu_j, sig_j = 0.0, 0.0, 0.0
     return dict(c=u[sl["c"]][0], beta=u[sl["beta"]].copy(),
                 delta=u[sl["delta"]][0] if spec.in_mean else 0.0,
                 phi=phi, Phi=Phi, theta=theta, Theta=Theta,
                 ar=_ar_expand(phi, Phi, s), ma=_ma_expand(theta, Theta, s),
                 sbar2=sbar2, omega=omega, alpha=alpha, gamma=gamma, b=b,
-                persistence=persistence, nu=nu, lam=lam)
+                persistence=persistence, nu=nu, lam=lam, lam_j=lam_j, mu_j=mu_j, sig_j=sig_j)
 
 
 def initial_params(spec, w_train):
@@ -200,6 +219,8 @@ def initial_params(spec, w_train):
         u[sl["garch"]] = [logit(0.95 / MAX_PERSISTENCE), np.log(0.03 / 0.88), np.log(0.04 / 0.88)]
     if spec.dist in ("t", "skewt"):
         u[sl["nu"]] = np.log(8.0 - 2.05)
+    if spec.jumps:
+        u[sl["jump"]] = [logit(0.02), -1.0, np.log(2.0)]   # ~5 jumps a year of about -1% +- 2%
     return u
 
 
@@ -282,8 +303,20 @@ def filter_series(u, spec, w, X, t0=None):
     reg = P["c"] + (X[:, :spec.k] @ P["beta"] if spec.k else 0.0) + np.zeros(len(w))
     mu, uu, eps, s2 = _filter(w, reg, P["ar"], P["ma"], spec.garch, spec.in_mean, P["delta"],
                               P["sbar2"], P["omega"], P["alpha"], P["gamma"], P["b"], spec.n_diff, t0)
-    ll = log_density(eps / np.sqrt(s2), spec.dist, P["nu"], P["lam"]) - 0.5 * np.log(s2)
+    if spec.jumps:
+        ll = jump_mixture_loglik(eps, s2, P["lam_j"], P["mu_j"], P["sig_j"])
+    else:
+        ll = log_density(eps / np.sqrt(s2), spec.dist, P["nu"], P["lam"]) - 0.5 * np.log(s2)
     return Filtered(ll=ll, mu=mu, s2=s2, u=uu, eps=eps, P=P)
+
+
+def jump_mixture_loglik(eps, s2, lam_j, mu_j, sig_j):
+    """log density of eps = sigma z + sum_{k<=N} Y_k - lam_j mu_j, a Poisson mixture of normals."""
+    n = np.arange(N_MAX_JUMPS + 1)[:, None]
+    log_p = -lam_j + n * np.log(lam_j) - gammaln(n + 1)
+    var = s2[None, :] + n * sig_j ** 2
+    mean = (n - lam_j) * mu_j
+    return logsumexp(log_p - 0.5 * (LOG_2PI + np.log(var) + (eps[None, :] - mean) ** 2 / var), axis=0)
 
 
 # ------------------------------------------------------------------ estimation
@@ -317,7 +350,7 @@ class Fit:
         return {"AIC": aic, "AICc": aic + 2 * k * (k + 1) / (n - k - 1), "BIC": 2 * n * self.train_nll + k * np.log(n)}
 
 
-def fit(spec, w, X, t_end, t0=None, u0=None, fixed=None, val_end=None, maxiter=3000):
+def fit(spec, w, X, t_end, t0=None, u0=None, fixed=None, val_end=None, maxiter=3000, exact_grad=True):
     """Minimise the mean negative log-likelihood over w[t0:t_end] with L-BFGS.
 
     fixed: boolean mask of parameters held at their u0 value (the two-step arm).
@@ -325,7 +358,11 @@ def fit(spec, w, X, t_end, t0=None, u0=None, fixed=None, val_end=None, maxiter=3
     nothing after t_end enters the objective).
     t0: common likelihood start, so that models with different lag orders are compared
     on the same observations.
+    exact_grad: use the reverse-mode gradient in gradients.py (default); False falls back
+    to scipy's finite differences.
     """
+    from gradients import value_and_grad          # imported here: gradients.py imports this module
+
     t0 = spec.t0 if t0 is None else t0
     u0 = initial_params(spec, w[t0:t_end]) if u0 is None else np.asarray(u0, float).copy()
     free = np.ones(spec.n_params, bool) if fixed is None else ~fixed
@@ -335,13 +372,22 @@ def fit(spec, w, X, t_end, t0=None, u0=None, fixed=None, val_end=None, maxiter=3
         u[free] = z
         return u
 
+    last = {"z": None, "v": None}     # the optimiser's latest evaluation, reused by record()
+
     def objective(z):
+        if exact_grad:
+            v, g = value_and_grad(full(z), spec, w, X, t0, t_end)
+            last["z"], last["v"] = z.copy(), v
+            return v, g[free]
         v = -filter_series(full(z), spec, w, X, t0).ll[t0:t_end].mean()
         return v if np.isfinite(v) else 1e10
 
     history = {"train": [], "val": []}
 
     def record(z):
+        if val_end is None and last["z"] is not None and np.array_equal(z, last["z"]):
+            history["train"].append(last["v"])
+            return
         ll = filter_series(full(z), spec, w, X, t0).ll
         history["train"].append(-ll[t0:t_end].mean())
         if val_end is not None:
@@ -349,7 +395,7 @@ def fit(spec, w, X, t_end, t0=None, u0=None, fixed=None, val_end=None, maxiter=3
 
     z0 = u0[free]
     record(z0)
-    res = minimize(objective, z0, method="L-BFGS-B", callback=record,
+    res = minimize(objective, z0, method="L-BFGS-B", jac=exact_grad, callback=record,
                    options=dict(maxiter=maxiter, maxfun=200000, gtol=1e-7))
     if not np.isclose(history["train"][-1], res.fun):
         record(res.x)
@@ -394,8 +440,11 @@ def fit_multistart(spec, w, X, t_end, t0=None, val_end=None):
 #   joint        SARIMAX + GJR-GARCH-t, all estimated together (coupling)
 #   joint_skewt  + skewed-t innovations
 #   full         + GARCH-in-mean
-ARMS = ["sarimax", "sarimax_t", "two_step", "joint", "joint_skewt", "full"]
-PREVIOUS = {"sarimax_t": "sarimax", "joint": "two_step", "joint_skewt": "joint", "full": "joint_skewt"}
+# and, off the ladder, an alternative tail model:
+#   jump         SARIMAX + GJR-GARCH, normal diffusion + Poisson jumps (instead of t / skewed-t)
+ARMS = ["sarimax", "sarimax_t", "two_step", "joint", "joint_skewt", "full", "jump"]
+PREVIOUS = {"sarimax_t": "sarimax", "joint": "two_step", "joint_skewt": "joint", "full": "joint_skewt",
+            "jump": "joint"}
 
 
 def arm_spec(arm, base):
@@ -407,6 +456,7 @@ def arm_spec(arm, base):
         "joint": Spec(**kw, garch=True, dist="t"),
         "joint_skewt": Spec(**kw, garch=True, dist="skewt"),
         "full": Spec(**kw, garch=True, dist="skewt", in_mean=True),
+        "jump": Spec(**kw, garch=True, dist="normal", jumps=True),
     }[arm]
 
 
@@ -415,7 +465,8 @@ def fit_arms(base, w, X, t_end, val_end=None, warm=None):
 
     Each arm except the two-step one is started twice: from its own start (the previous
     window's fit when warm is given) and from the rung below it, which is nested in it, so
-    the richer model can never end with a worse training likelihood. The better run is
+    the richer model can never end with a worse training likelihood. (The jump arm starts
+    from the joint GARCH-t mean and variance, which it does not nest.) The better run is
     kept; both loss curves are stored.
     """
     specs = {arm: arm_spec(arm, base) for arm in ARMS}
@@ -451,7 +502,8 @@ def fit_arms(base, w, X, t_end, val_end=None, warm=None):
 # ------------------------------------------------------------------ multi-horizon simulation
 @njit(cache=True)
 def _simulate(origins, horizon_k, H, M, seed, y, u, eps, s2, reg_paths, ar, ma, diffc,
-              garch, in_mean, delta, sbar2, omega, alpha, gamma, b, dist, nu, lam, ska, skb):
+              garch, in_mean, delta, sbar2, omega, alpha, gamma, b, dist, nu, lam, ska, skb,
+              jumps, lam_j, mu_j, sig_j):
     """Simulate M paths of H days ahead from each origin t (information up to day t-1).
 
     Returns the cumulative change y_{t+h-1} - y_{t-1} at each requested horizon, i.e. the
@@ -496,6 +548,11 @@ def _simulate(origins, horizon_k, H, M, seed, y, u, eps, s2, reg_paths, ar, ma, 
                     v = -(1.0 - lam) * S if np.random.random() < (1.0 - lam) / 2.0 else (1.0 + lam) * S
                     z = (v - ska) / skb
                 e = np.sqrt(sig2) * z
+                if jumps:
+                    n_j = np.random.poisson(lam_j)
+                    if n_j > 0:
+                        e += n_j * mu_j + np.sqrt(n_j) * sig_j * np.random.standard_normal()
+                    e -= lam_j * mu_j
                 wv = m + arma + e
                 ub[La + k] = wv - m
                 eb[Lm + k] = e
@@ -530,7 +587,8 @@ def simulate(fit_, filt, y, X, stochastic, origins, horizons, n_paths, seed):
     return _simulate(origins.astype(np.int64), np.asarray(horizons, np.int64) - 1, H, n_paths, seed,
                      y, filt.u, filt.eps, filt.s2, reg_paths, P["ar"], P["ma"], diffc,
                      spec.garch, spec.in_mean, P["delta"], P["sbar2"], P["omega"], P["alpha"],
-                     P["gamma"], P["b"], DIST_CODE[spec.dist], nu, P["lam"], ska, skb)
+                     P["gamma"], P["b"], DIST_CODE[spec.dist], nu, P["lam"], ska, skb,
+                     spec.jumps, P["lam_j"], P["mu_j"], P["sig_j"])
 
 
 def walk_forward(base, w, y, X, stochastic, start, stop, block, horizons, n_paths, summarize,
