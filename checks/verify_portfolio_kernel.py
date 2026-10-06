@@ -12,7 +12,7 @@ import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from portfolio_env import PortfolioWorld, constant_bank     # noqa: E402
+from portfolio_env import EXPOSURE_LEVELS, PortfolioWorld, constant_bank     # noqa: E402
 from stock_features import load                               # noqa: E402
 from stocks_data import TRAIN_END, TRAIN_START, load_panel   # noqa: E402
 
@@ -44,18 +44,37 @@ starts = env.sample_starts(40, rng)
 worst = 0.0
 env.rollout(env.default_bank("stocks"), env.default_bank("exposure"), starts[:2], env.T)   # compile
 t_ref = t_ker = 0.0
-SETTINGS = [(False, 1.0), (True, 1.0), (True, 1 / 3), (False, 1 / 3)]   # (fractional, max_weight)
+# (fractional, max_weight, dd_weight, decide_every, size-weighted buys, outside-pool cap[, max names])
+SETTINGS = [(False, 1.0, 0.0, 5, False, None), (True, 1.0, 0.0, 5, False, None), (True, 1 / 3, 0.0, 5, False, None),
+            (False, 1 / 3, 0.0, 5, False, None), (True, 1 / 3, 0.5, 21, False, None), (True, 1 / 3, 1.0, 21, False, None),
+            (True, 1 / 3, 0.5, 21, True, None), (False, 1.0, 0.0, 5, True, None),
+            (True, 1 / 3, 0.5, 21, True, 0.10), (False, 1 / 3, 0.0, 5, False, 0.05),
+            (True, 1 / 3, 0.5, 21, True, 0.10, 20), (False, 1 / 3, 0.0, 5, False, None, 10),
+            (True, 1 / 3, 0.0, 21, True, None, 3),
+            (True, 1 / 3, 0.5, 21, True, 0.10, 0, (10, 0.5)), (False, 1 / 3, 0.0, 5, True, None, 0, (3, 0.3)),
+            (True, 1 / 3, 0.0, 21, True, None, 20, (10, 0.5))]
+SIZE = np.ascontiguousarray(np.random.default_rng(1).lognormal(0.0, 1.0, env._open.shape))
 for trial in range(2 * len(SETTINGS)):
-    env.objective = ("cer", "sharpe")[trial % 2]         # both scores, same trades
-    env.fractional, env.max_weight = SETTINGS[trial // 2]
+    env.objective = ("cer", "sharpe", "alpha")[trial % 3]    # every score, same trades
+    env.fractional, env.max_weight, env.dd_weight, env.decide_every, by_size, out_w = SETTINGS[trial // 2][:6]
+    env.max_names = SETTINGS[trial // 2][6] if len(SETTINGS[trial // 2]) > 6 else 0
+    env.core_names, env.core_frac = SETTINGS[trial // 2][7] if len(SETTINGS[trial // 2]) > 7 else (0, 1.0)
+    env._size = SIZE if by_size else np.zeros((0, 0))
+    # a smaller cap for the outside pool (Nasdaq-100 names not in the S&P 500)
+    ratio = 1.0 if out_w is None else min(1.0, out_w / env.max_weight)
+    env._cap_scale = np.ascontiguousarray(np.where(panel.sp500, 1.0, ratio), dtype=np.float64)
     sb = random_bank(env, env.stock_names, 3, rng)
-    eb = random_bank(env, env.exposure_names, 4, rng)
-    t = time.perf_counter(); ref = env.run(sb, eb, starts, env.T)["G"]; t_ref += time.perf_counter() - t
-    t = time.perf_counter(); ker = env.rollout(sb, eb, starts, env.T)["G"]; t_ker += time.perf_counter() - t
-    diff = np.abs(ref - ker)
+    eb = random_bank(env, env.exposure_names, len(EXPOSURE_LEVELS), rng)
+    t = time.perf_counter(); r = env.run(sb, eb, starts, env.T); t_ref += time.perf_counter() - t
+    t = time.perf_counter(); k = env.rollout(sb, eb, starts, env.T); t_ker += time.perf_counter() - t
+    ref, ker = r["G"], k["G"]
+    diff = np.maximum(np.abs(ref - ker), np.abs(r["dd_gap"] - k["dd_gap"]))
     worst = max(worst, diff.max())
-    print(f"trial {trial} ({env.objective}, {'fractional' if env.fractional else 'whole'} shares, "
-          f"cap {env.max_weight:.2f}): mean G reference {ref.mean():+.4f} kernel {ker.mean():+.4f}  "
+    print(f"trial {trial:2d} ({env.objective}, {'fractional' if env.fractional else 'whole'} shares, "
+          f"cap {env.max_weight:.2f}, dd {env.dd_weight:g}, every {env.decide_every}d"
+          f"{', by size' if by_size else ''}{f', outside cap {out_w:.2f}' if out_w else ''}"
+          f"{f', at most {env.max_names} names' if env.max_names else ''}"
+          f"{f', core {env.core_names} <= {env.core_frac:.0%}' if env.core_names else ''}): mean G reference {ref.mean():+.4f} kernel {ker.mean():+.4f}  "
           f"max |diff| {diff.max():.2e}  episodes differing > 1e-9: {(diff > 1e-9).sum()}/{len(diff)}")
 print(f"worst difference {worst:.2e}; time per 40-episode score: reference {t_ref / (2 * len(SETTINGS)):.2f}s, "
       f"kernel {t_ker / (2 * len(SETTINGS)):.3f}s")

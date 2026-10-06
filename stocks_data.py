@@ -4,7 +4,7 @@ UNIVERSE. On every day the model may only trade stocks that were large and in an
 THAT DAY, never a company that was not yet listed, not yet large or not yet in the index,
 and never with the knowledge of which ones later won. Two pools:
   S&P 500      the 100 largest S&P 500 members of the day (UNIVERSE_SIZE, EXIT_RANK)
-  outside      the 20 largest Nasdaq-100 members of the day that are NOT in the S&P 500
+  outside      the 40 largest Nasdaq-100 members of the day that are NOT in the S&P 500
                (OUTSIDE_SIZE, OUTSIDE_EXIT): the growth names the S&P admits late or
                never -- Tesla 2013-2020, Mercado Libre, ASML, Baidu, JD, PDD, Atlassian,
                Monster Beverage before 2012, CrowdStrike and Datadog before 2024-25 ...
@@ -75,7 +75,9 @@ START, END = "2004-01-01", "2026-09-19"
 TRAIN_START, TRAIN_END, VAL_END = "2006-01-01", "2019-12-31", "2021-12-31"
 UNIVERSE_START = "2005-01-01"        # the first monthly selection (a year before training)
 UNIVERSE_SIZE, EXIT_RANK, SIZE_WINDOW = 100, 120, 63
-OUTSIDE_SIZE, OUTSIDE_EXIT = 20, 30
+# 40 (was 20): with 20 the pool was full most days (mean 16.5 of 20 since 2006), so the
+# 21st-largest outside name -- often the youngest -- never got in
+OUTSIDE_SIZE, OUTSIDE_EXIT = 40, 55
 # ^GSPC is the S&P 500 PRICE index (the features model it); the benchmark every portfolio
 # is scored against is SPY with dividends reinvested (yfinance's adjusted prices), because the
 # stocks are priced the same way: comparing dividend-adjusted stocks with a price index would
@@ -335,9 +337,76 @@ def _prices(tickers, refresh=False):
     return raw
 
 
+# PRICE SOURCE. "yfinance" (the default) or "crsp": survivorship-free prices, S&P 500
+# membership and the Nasdaq-100 mapping from CRSP through WRDS (crsp_data.py builds
+# data/crsp_raw.pkl; nothing else changes). Env var PRICE_SOURCE overrides.
+PRICE_SOURCE = os.environ.get("PRICE_SOURCE", "yfinance")
+
+
+def _on_calendar(frame, dates):
+    """A (date x column) frame moved onto the exchange calendar: a value dated on a day the
+    calendar lacks (CRSP's delisting value, placed on the next business day, can land on a
+    holiday) goes to the next calendar day instead of being dropped."""
+    pos = np.minimum(dates.searchsorted(frame.index), len(dates) - 1)
+    return frame.groupby(dates[pos]).last().reindex(dates)
+
+
+def _crsp_inputs(dates):
+    """(column labels, open, close, volume, S&P 500 member, Nasdaq-100 member) from CRSP."""
+    import crsp_data
+    if not os.path.exists(crsp_data.RAW):
+        raise SystemExit(f"PRICE_SOURCE is 'crsp' but {crsp_data.RAW} does not exist: run "
+                         "python crsp_data.py --check, then --download")
+    c = pd.read_pickle(crsp_data.RAW)
+    lab = c["labels"]
+    permnos = [p for p in c["fields"]["Close"].columns if lab.get(p, "") not in DROP]
+    f = {k: _on_calendar(v[permnos], dates) for k, v in c["fields"].items()}
+    cols = [lab[p] for p in permnos]
+    col = {p: i for i, p in enumerate(permnos)}
+    sp = np.zeros((len(dates), len(permnos)), bool)
+    for r in c["sp500"].itertuples():
+        if r.permno in col:
+            sp[(dates >= r.mbrstartdt) & (dates <= r.mbrenddt), col[r.permno]] = True
+    ndx = np.zeros_like(sp)
+    snaps = c["ndx"].sort_values("date")
+    days = sorted(snaps["date"].unique())
+    for i, d in enumerate(days):
+        end = days[i + 1] if i + 1 < len(days) else pd.Timestamp(END) + pd.Timedelta(days=1)
+        rows = (dates >= d) & (dates < end)
+        for p in snaps.loc[snaps["date"] == d, "permno"]:
+            if p in col:
+                ndx[rows, col[p]] = True
+    get = lambda k: f[k].to_numpy(dtype=np.float64)
+    return cols, get("Open"), get("Close"), get("Volume"), sp, ndx
+
+
 def load_panel(refresh=False):
     """Daily point-in-time panel on the S&P 500's trading calendar: every stock that is
     ever in either pool of the universe."""
+    if PRICE_SOURCE == "crsp":
+        raw = _prices(list(MARKET.values()), refresh)      # the market series stay on yfinance
+        spx = raw["Close"][MARKET["spx"]]
+        dates = spx.dropna().index
+        cols, opn, close, volume, sp, ndx = _crsp_inputs(dates)
+        outside = ndx & ~sp
+        U = (select_universe(dates, close, volume, sp)
+             | select_universe(dates, close, volume, outside, OUTSIDE_SIZE, OUTSIDE_EXIT))
+        keep = U.any(axis=0)
+        tickers = [t for t, k in zip(cols, keep) if k]
+        tbill = raw["Close"][MARKET["tbill"]].reindex(dates).ffill().bfill().to_numpy()
+        sec = sectors(tickers)
+        return Panel(
+            dates=dates, tickers=tickers,
+            open=opn[:, keep], close=close[:, keep], volume=volume[:, keep],
+            universe=U[:, keep], sp500=sp[:, keep],
+            spx_open=raw["Open"][MARKET["spx"]].reindex(dates).to_numpy(),
+            spx_close=spx.reindex(dates).to_numpy(),
+            bench_open=raw["Open"][MARKET["bench"]].reindex(dates).ffill().to_numpy(),
+            vix=raw["Close"][MARKET["vix"]].reindex(dates).ffill().to_numpy(),
+            rf=tbill / 100.0 / 252.0,
+            infl=daily_inflation(dates, load_cpi()),
+            sectors=[sec.get(t, "Unknown") for t in tickers],
+        )
     m = membership()
     live = m[m["end_date"].isna() | (m["end_date"] >= pd.Timestamp(UNIVERSE_START))]
     ndx = set(_symbols(ndx_snapshots()["ticker"])) - DROP - REUSED
@@ -373,6 +442,30 @@ def load_panel(refresh=False):
         infl=daily_inflation(dates, load_cpi()),
         sectors=[sec.get(t, "Unknown") for t in tickers],
     )
+
+
+RAW_CLOSE_CACHE = os.path.join(ROOT, "data", "raw_close.pkl")
+
+
+def raw_close(panel, refresh=False):
+    """(T, N) the closing price actually quoted each day. The panel's prices are adjusted
+    for every later split (and dividend); a market value needs the real price times the
+    real share count of that day, so: yfinance's split-adjusted close times the product
+    of every split AFTER that day (Apple on 2014-06-06: 23.06 x 7 x 4 = 645.7)."""
+    if os.path.exists(RAW_CLOSE_CACHE) and not refresh:
+        raw = pd.read_pickle(RAW_CLOSE_CACHE)
+        if list(raw.columns) == list(panel.tickers):
+            return raw.reindex(panel.dates).to_numpy(dtype=np.float64)
+    import yfinance as yf
+    d = yf.download(list(panel.tickers), start=START, end=END, auto_adjust=False, actions=True,
+                    progress=False, threads=True)
+    close = d["Close"].reindex(panel.dates)[list(panel.tickers)]
+    split = d["Stock Splits"].reindex(panel.dates)[list(panel.tickers)].fillna(0.0).replace(0.0, 1.0)
+    after = split[::-1].cumprod()[::-1].shift(-1).fillna(1.0)      # splits strictly after each day
+    raw = close * after
+    os.makedirs(os.path.dirname(RAW_CLOSE_CACHE), exist_ok=True)
+    raw.to_pickle(RAW_CLOSE_CACHE)
+    return raw.to_numpy(dtype=np.float64)
 
 
 CPI_CACHE = os.path.join(ROOT, "data", "cpi_u.csv")
