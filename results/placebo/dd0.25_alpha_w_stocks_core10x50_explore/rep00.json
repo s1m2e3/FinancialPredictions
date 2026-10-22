@@ -1,0 +1,8 @@
+{
+ "rep": 0,
+ "seed": 1000,
+ "validation gap vs buy all": -24.728153307945007,
+ "test gap vs buy all": -5.7693833300681465,
+ "check gain (sum over stages)": 0.4692704879897331,
+ "arms (stocks + exposure)": 0
+}

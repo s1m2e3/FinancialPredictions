@@ -1,0 +1,8 @@
+{
+ "rep": 0,
+ "seed": 1000,
+ "validation gap vs buy all": 0.0,
+ "test gap vs buy all": 0.0,
+ "check gain (sum over stages)": 0.0,
+ "arms (stocks + exposure)": 0
+}

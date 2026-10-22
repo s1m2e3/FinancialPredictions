@@ -1,0 +1,35 @@
+{
+ "rep": 2,
+ "folds": {
+  "A": [
+   2008,
+   2009,
+   2013,
+   2014,
+   2018,
+   2019
+  ],
+  "B": [
+   2006,
+   2007,
+   2010,
+   2011,
+   2016,
+   2017
+  ]
+ },
+ "reverted": [
+  false,
+  true
+ ],
+ "stocks": {
+  "arms": 0,
+  "guards": {},
+  "law_inputs": {}
+ },
+ "exposure": {
+  "arms": 0,
+  "guards": {},
+  "law_inputs": {}
+ }
+}
